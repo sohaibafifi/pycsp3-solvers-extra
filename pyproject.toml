@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 authors = [
     {name = "Sohaib AFIFI"}
 ]
-keywords = ["constraint-programming", "csp", "xcsp3", "or-tools", "cplex", "optimization"]
+keywords = ["constraint-programming", "csp", "xcsp3", "pycsp3", "or-tools", "cplex", "optimization"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

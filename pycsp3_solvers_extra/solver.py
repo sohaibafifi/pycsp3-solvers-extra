@@ -145,12 +145,13 @@ def _solve_extra(
             tmp_filename = tmp.name
 
         try:
-            instance = pycsp3_compile(tmp_filename, verbose=verbose)
-            if instance is None:
+            result = pycsp3_compile(tmp_filename, verbose=verbose)
+            # compile() returns (filename, is_cop) tuple
+            if result is None:
                 if verbose > 0:
                     print("Error: Failed to compile model")
                 return TypeStatus.UNKNOWN
-            xcsp3_file = tmp_filename
+            xcsp3_file = result[0] if isinstance(result, tuple) else tmp_filename
         except Exception as e:
             if verbose > 0:
                 print(f"Error during compilation: {e}")
@@ -169,12 +170,17 @@ def _solve_extra(
         )
 
         # Parse XCSP3 and build solver model
-        from pycsp3.parser.xparser import ParserXCSP3
+        from pycsp3.parser.xparser import ParserXCSP3, CallbackerXCSP3
 
         if verbose > 0:
             print(f"Parsing XCSP3 file: {xcsp3_file}")
 
-        parser = ParserXCSP3(xcsp3_file, callbacks)
+        # Parse the XML file
+        parser = ParserXCSP3(xcsp3_file)
+
+        # Create callbacker to invoke callbacks
+        callbacker = CallbackerXCSP3(parser, callbacks)
+        callbacker.load_instance()
 
         if verbose > 0:
             print(f"Solving with {solver}...")
@@ -200,20 +206,27 @@ def _solve_extra(
 
 
 def _map_solution_to_pycsp3(callbacks) -> None:
-    """Map solution from backend to pycsp3 Variable.value attributes."""
+    """Map solution from backend to pycsp3 Variable.value/values attributes."""
     from pycsp3.classes.entities import VarEntities, EVar, EVarArray
 
     solution = callbacks.get_solution()
     if solution is None:
         return
 
+    def set_var_value(var, value):
+        """Set both value and values for a variable."""
+        var.value = value
+        if not hasattr(var, 'values') or var.values is None:
+            var.values = []
+        var.values.append(value)
+
     # Map solution values back to pycsp3 variables
     for item in VarEntities.items:
         if isinstance(item, EVar):
             var = item.variable
             if var.id in solution:
-                var.value = solution[var.id]
+                set_var_value(var, solution[var.id])
         elif isinstance(item, EVarArray):
             for var in item.flatVars:
                 if var is not None and var.id in solution:
-                    var.value = solution[var.id]
+                    set_var_value(var, solution[var.id])
