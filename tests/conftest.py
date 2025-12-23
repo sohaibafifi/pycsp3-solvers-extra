@@ -7,6 +7,7 @@ PyCSP3 checks sys.argv[0] at import time, which causes issues with pytest.
 
 import sys
 import os
+import atexit
 
 # Store original argv
 _original_argv = sys.argv.copy()
@@ -20,6 +21,13 @@ sys.argv[0] = _fake_script
 
 import pytest
 
+# Unregister pycsp3's atexit callback to prevent errors at exit
+try:
+    from pycsp3 import end as pycsp3_end
+    atexit.unregister(pycsp3_end)
+except (ImportError, AttributeError):
+    pass
+
 
 @pytest.fixture(autouse=True)
 def reset_pycsp3_state():
@@ -31,10 +39,11 @@ def reset_pycsp3_state():
     # Clear all state before test
     clear()
 
-    # Reset compilation state
+    # Reset compilation state fully
     Compilation.done = False
     Compilation.string_model = None
     Compilation.model = None
+    Compilation.string_data = None
 
     yield  # Run the test
 
@@ -45,6 +54,7 @@ def reset_pycsp3_state():
     Compilation.done = False
     Compilation.string_model = None
     Compilation.model = None
+    Compilation.string_data = None
 
 
 def pytest_configure(config):
