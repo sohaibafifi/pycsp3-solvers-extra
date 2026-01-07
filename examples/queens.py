@@ -118,7 +118,7 @@ def main():
     parser = argparse.ArgumentParser(description="N-Queens Solver Comparison")
     parser.add_argument("-n", type=int, default=8, help="Board size (default: 8)")
     parser.add_argument("-v", "--verbose", type=int, default=0, help="Verbosity level")
-    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco"],
+    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo"],
                         help="Solvers to compare (default: ortools ace choco)")
     args = parser.parse_args()
 

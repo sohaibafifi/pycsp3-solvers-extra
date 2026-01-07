@@ -10,37 +10,23 @@ from pycsp3.functions import Table
 from pycsp3_solvers_extra import solve
 from pycsp3_solvers_extra.backends import get_backend
 
-# Skip all tests if CPO is not available or CP Optimizer not installed
+# Import CPO backend to trigger auto-configuration
+try:
+    from pycsp3_solvers_extra.backends.cpo_backend import CPO_AVAILABLE, _CPO_CONFIGURED
+except ImportError:
+    CPO_AVAILABLE = False
+    _CPO_CONFIGURED = False
+
+# Skip all tests if CPO is not available or not configured
 pytestmark = pytest.mark.skipif(
-    get_backend("cpo") is None,
-    reason="CPO backend not available"
-)
-
-
-def cpo_available():
-    """Check if CPO solver is actually runnable."""
-    try:
-        from docplex.cp.model import CpoModel
-        mdl = CpoModel()
-        x = mdl.integer_var(1, 10)
-        mdl.add(x == 5)
-        sol = mdl.solve(TimeLimit=5)
-        return sol is not None
-    except Exception:
-        return False
-
-
-# Additional skip for tests that actually run the solver
-requires_cpo_solver = pytest.mark.skipif(
-    not cpo_available(),
-    reason="CP Optimizer solver not installed"
+    not (CPO_AVAILABLE and _CPO_CONFIGURED),
+    reason="CPO backend not available or CP Optimizer not found"
 )
 
 
 class TestBasicSatisfaction:
     """Tests for basic satisfaction problems."""
 
-    @requires_cpo_solver
     def test_simple_alldifferent(self):
         """Test simple AllDifferent constraint."""
         x = VarArray(size=4, dom=range(1, 5))
@@ -52,7 +38,6 @@ class TestBasicSatisfaction:
         sol = values(x)
         assert len(set(sol)) == 4, "AllDifferent violated"
 
-    @requires_cpo_solver
     def test_sum_equals(self):
         """Test Sum constraint with equality."""
         x = VarArray(size=3, dom=range(1, 10))
@@ -64,7 +49,6 @@ class TestBasicSatisfaction:
         sol = values(x)
         assert sum(sol) == 15
 
-    @requires_cpo_solver
     def test_sum_less_than(self):
         """Test Sum constraint with less than."""
         x = VarArray(size=3, dom=range(1, 10))
@@ -76,7 +60,6 @@ class TestBasicSatisfaction:
         sol = values(x)
         assert sum(sol) < 10
 
-    @requires_cpo_solver
     def test_unsatisfiable(self):
         """Test detection of unsatisfiable problem."""
         x = VarArray(size=5, dom=range(1, 4))  # Only 3 values for 5 vars
@@ -89,7 +72,6 @@ class TestBasicSatisfaction:
 class TestOptimization:
     """Tests for optimization problems."""
 
-    @requires_cpo_solver
     def test_minimize_sum(self):
         """Test minimizing sum."""
         x = VarArray(size=3, dom=range(1, 10))
@@ -102,7 +84,6 @@ class TestOptimization:
         sol = values(x)
         assert sum(sol) == 6  # 1 + 2 + 3
 
-    @requires_cpo_solver
     def test_maximize_sum(self):
         """Test maximizing sum."""
         x = VarArray(size=3, dom=range(1, 10))
@@ -119,7 +100,6 @@ class TestOptimization:
 class TestTableConstraints:
     """Tests for table/extension constraints."""
 
-    @requires_cpo_solver
     def test_table_positive(self):
         """Test positive table constraint (allowed tuples)."""
         x = Var(dom=range(1, 4))
@@ -139,7 +119,6 @@ class TestTableConstraints:
 class TestCountingConstraints:
     """Tests for counting constraints."""
 
-    @requires_cpo_solver
     def test_count_equals(self):
         """Test Count constraint with equality."""
         x = VarArray(size=5, dom=range(1, 4))
@@ -154,7 +133,6 @@ class TestCountingConstraints:
         sol = values(x)
         assert sol.count(1) == 2
 
-    @requires_cpo_solver
     def test_atleast(self):
         """Test Count with >= (at least)."""
         x = VarArray(size=5, dom=range(1, 4))
@@ -166,7 +144,6 @@ class TestCountingConstraints:
         sol = values(x)
         assert sol.count(1) >= 2
 
-    @requires_cpo_solver
     def test_atmost(self):
         """Test Count with <= (at most)."""
         x = VarArray(size=5, dom=range(1, 4))
@@ -182,7 +159,6 @@ class TestCountingConstraints:
 class TestElementConstraint:
     """Tests for Element constraint."""
 
-    @requires_cpo_solver
     def test_element_variable_array(self):
         """Test Element with variable array (VarArray[var_index])."""
         x = VarArray(size=5, dom=range(1, 10))
@@ -206,7 +182,6 @@ class TestElementConstraint:
 class TestMinMaxConstraints:
     """Tests for Minimum/Maximum constraints."""
 
-    @requires_cpo_solver
     def test_minimum(self):
         """Test Minimum constraint."""
         x = VarArray(size=4, dom=range(1, 10))
@@ -221,7 +196,6 @@ class TestMinMaxConstraints:
         sol = values(x)
         assert min(sol) == 3
 
-    @requires_cpo_solver
     def test_maximum(self):
         """Test Maximum constraint."""
         x = VarArray(size=4, dom=range(1, 10))
@@ -240,7 +214,6 @@ class TestMinMaxConstraints:
 class TestOrderingConstraints:
     """Tests for ordering constraints."""
 
-    @requires_cpo_solver
     def test_increasing(self):
         """Test Increasing constraint."""
         x = VarArray(size=4, dom=range(1, 10))
@@ -253,7 +226,6 @@ class TestOrderingConstraints:
         for i in range(len(sol) - 1):
             assert sol[i] <= sol[i + 1]
 
-    @requires_cpo_solver
     def test_strictly_increasing(self):
         """Test Strictly Increasing constraint."""
         x = VarArray(size=4, dom=range(1, 10))
@@ -270,7 +242,6 @@ class TestOrderingConstraints:
 class TestChannelConstraint:
     """Tests for Channel/Inverse constraint."""
 
-    @requires_cpo_solver
     def test_channel(self):
         """Test Channel constraint."""
         n = 4
@@ -292,7 +263,6 @@ class TestChannelConstraint:
 class TestAllEqual:
     """Tests for AllEqual constraint."""
 
-    @requires_cpo_solver
     def test_all_equal(self):
         """Test AllEqual constraint."""
         x = VarArray(size=4, dom=range(1, 5))
@@ -308,7 +278,6 @@ class TestAllEqual:
 class TestIntensionConstraints:
     """Tests for intension (expression) constraints."""
 
-    @requires_cpo_solver
     def test_simple_comparison(self):
         """Test simple comparison constraint."""
         x = Var(dom=range(1, 10))
@@ -320,7 +289,6 @@ class TestIntensionConstraints:
 
         assert value(x) < value(y)
 
-    @requires_cpo_solver
     def test_arithmetic_expression(self):
         """Test arithmetic expression constraint."""
         x = Var(dom=range(1, 10))
@@ -333,7 +301,6 @@ class TestIntensionConstraints:
 
         assert value(x) + value(y) == value(z)
 
-    @requires_cpo_solver
     def test_multiplication(self):
         """Test multiplication constraint."""
         x = Var(dom=range(1, 10))

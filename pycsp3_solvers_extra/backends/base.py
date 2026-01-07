@@ -56,6 +56,15 @@ class BaseCallbacks(Callbacks):
         self.print_general_methods = False
         self.print_specific_methods = False
 
+        # Disable pattern recognition so all intension constraints
+        # go through ctr_intension for uniform handling
+        self.recognize_unary_primitives = False
+        self.recognize_binary_primitives = False
+        self.recognize_ternary_primitives = False
+        self.recognize_logic_intension = False
+        self.recognize_sum_intension = False
+        self.recognize_extremum_intension = False
+
         # Configuration
         self.time_limit = time_limit
         self.sols = sols
@@ -95,139 +104,139 @@ class BaseCallbacks(Callbacks):
         The default implementation handles common patterns.
         """
         if node.type == TypeNode.VAR:
-            var_id = node.content.id
+            var_id = node.cnt.id
             if var_id not in self.vars:
                 raise ValueError(f"Unknown variable in expression: {var_id}")
             return self.vars[var_id]
 
         elif node.type == TypeNode.INT:
-            return node.content
+            return node.cnt
 
         elif node.type == TypeNode.SYMBOL:
             # Symbolic values - typically mapped to integers
-            return node.content
+            return node.cnt
 
         elif node.type == TypeNode.ADD:
             return self._translate_nary(node, self._add)
 
         elif node.type == TypeNode.SUB:
-            if len(node.sons) == 1:
-                return self._neg(self.translate_node(node.sons[0]))
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            if len(node.cnt) == 1:
+                return self._neg(self.translate_node(node[0]))
+            left = self.translate_node(node[0])
+            right = self.translate_node(node[1])
             return self._sub(left, right)
 
         elif node.type == TypeNode.MUL:
             return self._translate_nary(node, self._mul)
 
         elif node.type == TypeNode.DIV:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._div(left, right)
 
         elif node.type == TypeNode.MOD:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._mod(left, right)
 
         elif node.type == TypeNode.POW:
-            base = self.translate_node(node.sons[0])
-            exp = self.translate_node(node.sons[1])
+            base = self.translate_node(node.cnt[0])
+            exp = self.translate_node(node.cnt[1])
             return self._pow(base, exp)
 
         elif node.type == TypeNode.NEG:
-            return self._neg(self.translate_node(node.sons[0]))
+            return self._neg(self.translate_node(node.cnt[0]))
 
         elif node.type == TypeNode.ABS:
-            return self._abs(self.translate_node(node.sons[0]))
+            return self._abs(self.translate_node(node.cnt[0]))
 
         elif node.type == TypeNode.DIST:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._abs(self._sub(left, right))
 
         elif node.type in (TypeNode.MIN, TypeNode.MAX):
-            args = [self.translate_node(s) for s in node.sons]
+            args = [self.translate_node(s) for s in node.cnt]
             return self._min(args) if node.type == TypeNode.MIN else self._max(args)
 
         # Comparison operators - return boolean expression
         elif node.type == TypeNode.EQ:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._eq(left, right)
 
         elif node.type == TypeNode.NE:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._ne(left, right)
 
         elif node.type == TypeNode.LT:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._lt(left, right)
 
         elif node.type == TypeNode.LE:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._le(left, right)
 
         elif node.type == TypeNode.GT:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._gt(left, right)
 
         elif node.type == TypeNode.GE:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._ge(left, right)
 
         # Logical operators
         elif node.type == TypeNode.AND:
-            args = [self.translate_node(s) for s in node.sons]
+            args = [self.translate_node(s) for s in node.cnt]
             return self._and(args)
 
         elif node.type == TypeNode.OR:
-            args = [self.translate_node(s) for s in node.sons]
+            args = [self.translate_node(s) for s in node.cnt]
             return self._or(args)
 
         elif node.type == TypeNode.NOT:
-            return self._not(self.translate_node(node.sons[0]))
+            return self._not(self.translate_node(node.cnt[0]))
 
         elif node.type == TypeNode.XOR:
-            args = [self.translate_node(s) for s in node.sons]
+            args = [self.translate_node(s) for s in node.cnt]
             return self._xor(args)
 
         elif node.type == TypeNode.IFF:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._iff(left, right)
 
         elif node.type == TypeNode.IMP:
-            left = self.translate_node(node.sons[0])
-            right = self.translate_node(node.sons[1])
+            left = self.translate_node(node.cnt[0])
+            right = self.translate_node(node.cnt[1])
             return self._imp(left, right)
 
         elif node.type == TypeNode.IF:
             # Ternary: if(cond, then, else)
-            cond = self.translate_node(node.sons[0])
-            then_val = self.translate_node(node.sons[1])
-            else_val = self.translate_node(node.sons[2])
+            cond = self.translate_node(node.cnt[0])
+            then_val = self.translate_node(node.cnt[1])
+            else_val = self.translate_node(node.cnt[2])
             return self._if_then_else(cond, then_val, else_val)
 
         elif node.type == TypeNode.IN:
-            val = self.translate_node(node.sons[0])
+            val = self.translate_node(node.cnt[0])
             # sons[1] is a SET node
-            set_vals = [self.translate_node(s) for s in node.sons[1].sons]
+            set_vals = [self.translate_node(s) for s in node.cnt[1].sons]
             return self._in_set(val, set_vals)
 
         elif node.type == TypeNode.NOTIN:
-            val = self.translate_node(node.sons[0])
-            set_vals = [self.translate_node(s) for s in node.sons[1].sons]
+            val = self.translate_node(node.cnt[0])
+            set_vals = [self.translate_node(s) for s in node.cnt[1].sons]
             return self._not_in_set(val, set_vals)
 
         elif node.type == TypeNode.SET:
             # Return list of values
-            return [self.translate_node(s) for s in node.sons]
+            return [self.translate_node(s) for s in node.cnt]
 
         else:
             raise NotImplementedError(
@@ -236,8 +245,8 @@ class BaseCallbacks(Callbacks):
 
     def _translate_nary(self, node: Node, op) -> Any:
         """Translate n-ary operation (ADD, MUL)."""
-        result = self.translate_node(node.sons[0])
-        for son in node.sons[1:]:
+        result = self.translate_node(node.cnt[0])
+        for son in node.cnt[1:]:
             result = op(result, self.translate_node(son))
         return result
 

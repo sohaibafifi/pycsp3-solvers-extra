@@ -9,25 +9,108 @@ Note: Requires IBM CPLEX Optimization Studio to be installed.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from pycsp3.classes.auxiliary.enums import TypeStatus, TypeConditionOperator
+from pycsp3.classes.auxiliary.enums import TypeStatus, TypeConditionOperator, TypeObj
 from pycsp3.classes.auxiliary.conditions import Condition
 from pycsp3.classes.nodes import Node
 
 from pycsp3_solvers_extra.backends.base import BaseCallbacks
 
-if TYPE_CHECKING:
-    from pycsp3.parser.xparser import Variable
+from pycsp3.classes.main.variables import Variable
 
 # Try to import docplex
 try:
     from docplex.cp.model import CpoModel
     from docplex.cp.solution import CpoSolveResult
     import docplex.cp.modeler as modeler
+    from docplex.cp.config import context as cpo_context
     CPO_AVAILABLE = True
 except ImportError:
     CPO_AVAILABLE = False
+    cpo_context = None
+
+
+def _configure_cpoptimizer():
+    """Auto-detect and configure cpoptimizer executable path."""
+    import os
+    import platform
+    import glob
+
+    if not CPO_AVAILABLE:
+        return False
+
+    # Check if already configured and working
+    execfile = cpo_context.solver.local.execfile
+    if execfile and os.path.isfile(execfile):
+        return True
+
+    # Common installation paths by platform
+    system = platform.system()
+    machine = platform.machine()
+
+    search_paths = []
+
+    if system == "Darwin":  # macOS
+        # Determine architecture
+        if machine == "arm64":
+            arch_dir = "arm64_osx"
+        else:
+            arch_dir = "x86-64_osx"
+
+        # Search in common locations
+        search_paths = [
+            f"/Applications/CPLEX_Studio*/cpoptimizer/bin/{arch_dir}/cpoptimizer",
+            f"/opt/ibm/ILOG/CPLEX_Studio*/cpoptimizer/bin/{arch_dir}/cpoptimizer",
+            os.path.expanduser(f"~/Applications/CPLEX_Studio*/cpoptimizer/bin/{arch_dir}/cpoptimizer"),
+        ]
+    elif system == "Linux":
+        if machine == "x86_64":
+            arch_dir = "x86-64_linux"
+        elif machine == "aarch64":
+            arch_dir = "arm64_linux"
+        else:
+            arch_dir = "x86-64_linux"
+
+        search_paths = [
+            f"/opt/ibm/ILOG/CPLEX_Studio*/cpoptimizer/bin/{arch_dir}/cpoptimizer",
+            f"/opt/CPLEX_Studio*/cpoptimizer/bin/{arch_dir}/cpoptimizer",
+            os.path.expanduser(f"~/CPLEX_Studio*/cpoptimizer/bin/{arch_dir}/cpoptimizer"),
+        ]
+    elif system == "Windows":
+        search_paths = [
+            r"C:\Program Files\IBM\ILOG\CPLEX_Studio*\cpoptimizer\bin\x64_win64\cpoptimizer.exe",
+            r"C:\Program Files (x86)\IBM\ILOG\CPLEX_Studio*\cpoptimizer\bin\x64_win64\cpoptimizer.exe",
+        ]
+
+    # Also check CPLEX_STUDIO_DIR environment variable
+    cplex_dir = os.environ.get("CPLEX_STUDIO_DIR")
+    if cplex_dir:
+        if system == "Darwin":
+            arch_dir = "arm64_osx" if machine == "arm64" else "x86-64_osx"
+            search_paths.insert(0, os.path.join(cplex_dir, "cpoptimizer", "bin", arch_dir, "cpoptimizer"))
+        elif system == "Linux":
+            arch_dir = "arm64_linux" if machine == "aarch64" else "x86-64_linux"
+            search_paths.insert(0, os.path.join(cplex_dir, "cpoptimizer", "bin", arch_dir, "cpoptimizer"))
+        elif system == "Windows":
+            search_paths.insert(0, os.path.join(cplex_dir, "cpoptimizer", "bin", "x64_win64", "cpoptimizer.exe"))
+
+    # Search for the executable
+    for pattern in search_paths:
+        matches = glob.glob(pattern)
+        if matches:
+            # Use the most recent version (sorted by name, last is usually newest)
+            matches.sort()
+            execfile = matches[-1]
+            if os.path.isfile(execfile):
+                cpo_context.solver.local.execfile = execfile
+                return True
+
+    return False
+
+
+# Try to configure cpoptimizer on module load
+_CPO_CONFIGURED = _configure_cpoptimizer() if CPO_AVAILABLE else False
 
 
 class CPOCallbacks(BaseCallbacks):
@@ -51,6 +134,16 @@ class CPOCallbacks(BaseCallbacks):
             raise ImportError(
                 "DOcplex is not available. Install it with: pip install docplex\n"
                 "Note: CP Optimizer solver requires IBM CPLEX Optimization Studio."
+            )
+
+        if not _CPO_CONFIGURED:
+            raise ImportError(
+                "CP Optimizer executable not found.\n"
+                "Please ensure IBM CPLEX Optimization Studio is installed and either:\n"
+                "  1. Add cpoptimizer to your PATH, or\n"
+                "  2. Set CPLEX_STUDIO_DIR environment variable, or\n"
+                "  3. Manually configure: from docplex.cp.config import context; "
+                "context.solver.local.execfile = '/path/to/cpoptimizer'"
             )
 
         self.model = CpoModel()
@@ -111,72 +204,72 @@ class CPOCallbacks(BaseCallbacks):
         from pycsp3.classes.nodes import TypeNode
 
         if node.type == TypeNode.VAR:
-            return self.vars[node.variable.id]
+            return self.vars[node.cnt.id]
         elif node.type == TypeNode.INT:
-            return node.value
+            return node.cnt
         elif node.type == TypeNode.ADD:
-            return sum(self.translate_node(c) for c in node.sons)
+            return sum(self.translate_node(c) for c in node.cnt)
         elif node.type == TypeNode.SUB:
-            sons = [self.translate_node(c) for c in node.sons]
+            sons = [self.translate_node(c) for c in node.cnt]
             result = sons[0]
             for s in sons[1:]:
                 result = result - s
             return result
         elif node.type == TypeNode.MUL:
-            result = self.translate_node(node.sons[0])
-            for c in node.sons[1:]:
+            result = self.translate_node(node.cnt[0])
+            for c in node.cnt[1:]:
                 result = result * self.translate_node(c)
             return result
         elif node.type == TypeNode.DIV:
-            return self.translate_node(node.sons[0]) // self.translate_node(node.sons[1])
+            return self.translate_node(node.cnt[0]) // self.translate_node(node.cnt[1])
         elif node.type == TypeNode.MOD:
-            return self.translate_node(node.sons[0]) % self.translate_node(node.sons[1])
+            return self.translate_node(node.cnt[0]) % self.translate_node(node.cnt[1])
         elif node.type == TypeNode.NEG:
-            return -self.translate_node(node.sons[0])
+            return -self.translate_node(node.cnt[0])
         elif node.type == TypeNode.ABS:
-            return modeler.abs(self.translate_node(node.sons[0]))
+            return modeler.abs(self.translate_node(node.cnt[0]))
         elif node.type == TypeNode.MIN:
-            return modeler.min([self.translate_node(c) for c in node.sons])
+            return modeler.min([self.translate_node(c) for c in node.cnt])
         elif node.type == TypeNode.MAX:
-            return modeler.max([self.translate_node(c) for c in node.sons])
+            return modeler.max([self.translate_node(c) for c in node.cnt])
         elif node.type == TypeNode.DIST:
-            a, b = self.translate_node(node.sons[0]), self.translate_node(node.sons[1])
+            a, b = self.translate_node(node.cnt[0]), self.translate_node(node.cnt[1])
             return modeler.abs(a - b)
         elif node.type == TypeNode.EQ:
-            return self.translate_node(node.sons[0]) == self.translate_node(node.sons[1])
+            return self.translate_node(node.cnt[0]) == self.translate_node(node.cnt[1])
         elif node.type == TypeNode.NE:
-            return self.translate_node(node.sons[0]) != self.translate_node(node.sons[1])
+            return self.translate_node(node.cnt[0]) != self.translate_node(node.cnt[1])
         elif node.type == TypeNode.LT:
-            return self.translate_node(node.sons[0]) < self.translate_node(node.sons[1])
+            return self.translate_node(node.cnt[0]) < self.translate_node(node.cnt[1])
         elif node.type == TypeNode.LE:
-            return self.translate_node(node.sons[0]) <= self.translate_node(node.sons[1])
+            return self.translate_node(node.cnt[0]) <= self.translate_node(node.cnt[1])
         elif node.type == TypeNode.GT:
-            return self.translate_node(node.sons[0]) > self.translate_node(node.sons[1])
+            return self.translate_node(node.cnt[0]) > self.translate_node(node.cnt[1])
         elif node.type == TypeNode.GE:
-            return self.translate_node(node.sons[0]) >= self.translate_node(node.sons[1])
+            return self.translate_node(node.cnt[0]) >= self.translate_node(node.cnt[1])
         elif node.type == TypeNode.AND:
-            return modeler.logical_and([self.translate_node(c) for c in node.sons])
+            return modeler.logical_and([self.translate_node(c) for c in node.cnt])
         elif node.type == TypeNode.OR:
-            return modeler.logical_or([self.translate_node(c) for c in node.sons])
+            return modeler.logical_or([self.translate_node(c) for c in node.cnt])
         elif node.type == TypeNode.NOT:
-            return modeler.logical_not(self.translate_node(node.sons[0]))
+            return modeler.logical_not(self.translate_node(node.cnt[0]))
         elif node.type == TypeNode.IMP:
-            a, b = self.translate_node(node.sons[0]), self.translate_node(node.sons[1])
+            a, b = self.translate_node(node.cnt[0]), self.translate_node(node.cnt[1])
             return modeler.if_then(a, b)
         elif node.type == TypeNode.IFF:
-            a, b = self.translate_node(node.sons[0]), self.translate_node(node.sons[1])
+            a, b = self.translate_node(node.cnt[0]), self.translate_node(node.cnt[1])
             return a == b
         elif node.type == TypeNode.IF:
-            cond = self.translate_node(node.sons[0])
-            then_val = self.translate_node(node.sons[1])
-            else_val = self.translate_node(node.sons[2])
+            cond = self.translate_node(node.cnt[0])
+            then_val = self.translate_node(node.cnt[1])
+            else_val = self.translate_node(node.cnt[2])
             return modeler.conditional(cond, then_val, else_val)
         elif node.type == TypeNode.SQR:
-            val = self.translate_node(node.sons[0])
+            val = self.translate_node(node.cnt[0])
             return val * val
         elif node.type == TypeNode.POW:
-            base = self.translate_node(node.sons[0])
-            exp = self.translate_node(node.sons[1])
+            base = self.translate_node(node.cnt[0])
+            exp = self.translate_node(node.cnt[1])
             return modeler.power(base, exp)
         else:
             raise NotImplementedError(f"Node type {node.type} not implemented for CPO")
@@ -399,56 +492,79 @@ class CPOCallbacks(BaseCallbacks):
     def ctr_ordered(self, lst: list[Variable], operator: str, lengths: None | list[int] | list[Variable]):
         """Ordered constraint (increasing/decreasing)."""
         vars_list = self._get_var_list(lst)
+        op = operator.upper() if isinstance(operator, str) else str(operator).upper()
 
         if lengths is None:
-            if operator == "INCREASING":
+            if op in ("INCREASING", "LE"):
                 for i in range(len(vars_list) - 1):
                     self.model.add(vars_list[i] <= vars_list[i + 1])
-            elif operator == "STRICTLY_INCREASING":
+            elif op in ("STRICTLY_INCREASING", "LT"):
                 for i in range(len(vars_list) - 1):
                     self.model.add(vars_list[i] < vars_list[i + 1])
-            elif operator == "DECREASING":
+            elif op in ("DECREASING", "GE"):
                 for i in range(len(vars_list) - 1):
                     self.model.add(vars_list[i] >= vars_list[i + 1])
-            elif operator == "STRICTLY_DECREASING":
+            elif op in ("STRICTLY_DECREASING", "GT"):
                 for i in range(len(vars_list) - 1):
                     self.model.add(vars_list[i] > vars_list[i + 1])
+            else:
+                raise NotImplementedError(f"Unknown ordering operator: {operator}")
         else:
             # With lengths
             for i in range(len(vars_list) - 1):
                 length = lengths[i] if isinstance(lengths[i], int) else self.vars[lengths[i].id]
-                if operator == "INCREASING":
+                if op in ("INCREASING", "LE"):
                     self.model.add(vars_list[i] + length <= vars_list[i + 1])
-                elif operator == "DECREASING":
+                elif op in ("DECREASING", "GE"):
                     self.model.add(vars_list[i] >= vars_list[i + 1] + length)
 
         self._log(2, f"Added Ordered constraint ({operator})")
 
     # ========== Objective callbacks ==========
 
-    def obj_minimize(self, obj_type: str, lst: list[Variable] | list[Node], coefficients: None | list[int]):
-        """Minimize objective."""
-        self._set_objective(obj_type, lst, coefficients, minimize=True)
+    def obj_minimize(self, term: Variable | Node):
+        """Minimize a simple objective (single term)."""
+        if isinstance(term, Variable):
+            expr = self.vars[term.id]
+        else:
+            expr = self.translate_node(term)
+        self._objective_expr = expr
+        self._minimize = True
+        self._log(2, "Set minimize objective")
 
-    def obj_maximize(self, obj_type: str, lst: list[Variable] | list[Node], coefficients: None | list[int]):
-        """Maximize objective."""
-        self._set_objective(obj_type, lst, coefficients, minimize=False)
+    def obj_maximize(self, term: Variable | Node):
+        """Maximize a simple objective (single term)."""
+        if isinstance(term, Variable):
+            expr = self.vars[term.id]
+        else:
+            expr = self.translate_node(term)
+        self._objective_expr = expr
+        self._minimize = False
+        self._log(2, "Set maximize objective")
 
-    def _set_objective(self, obj_type: str, lst: list[Variable] | list[Node],
-                       coefficients: None | list[int], minimize: bool):
-        """Set optimization objective."""
-        exprs = self._get_var_or_node_list(lst)
+    def obj_minimize_special(self, obj_type: TypeObj, terms: list[Variable] | list[Node], coefficients: None | list[int]):
+        """Minimize special objective (sum, min, max, etc.)."""
+        self._set_objective_special(obj_type, terms, coefficients, minimize=True)
 
-        if obj_type == "SUM" or obj_type == "EXPRESSION":
+    def obj_maximize_special(self, obj_type: TypeObj, terms: list[Variable] | list[Node], coefficients: None | list[int]):
+        """Maximize special objective (sum, min, max, etc.)."""
+        self._set_objective_special(obj_type, terms, coefficients, minimize=False)
+
+    def _set_objective_special(self, obj_type: TypeObj, terms: list[Variable] | list[Node],
+                               coefficients: None | list[int], minimize: bool):
+        """Set optimization objective for special types."""
+        exprs = self._get_var_or_node_list(terms)
+
+        if obj_type == TypeObj.SUM:
             if coefficients is None:
                 obj_expr = modeler.sum(exprs)
             else:
                 obj_expr = modeler.sum(c * e for c, e in zip(coefficients, exprs))
-        elif obj_type == "MINIMUM":
+        elif obj_type == TypeObj.MINIMUM:
             obj_expr = modeler.min(exprs)
-        elif obj_type == "MAXIMUM":
+        elif obj_type == TypeObj.MAXIMUM:
             obj_expr = modeler.max(exprs)
-        elif obj_type == "NVALUES":
+        elif obj_type == TypeObj.NVALUES:
             # Count distinct values
             all_vals = set()
             for e in exprs:
@@ -456,7 +572,7 @@ class CPOCallbacks(BaseCallbacks):
                     all_vals.update(range(e.domain.min(), e.domain.max() + 1))
             val_used = [modeler.logical_or([e == v for e in exprs]) for v in all_vals]
             obj_expr = modeler.sum(val_used)
-        elif obj_type == "LEX":
+        elif obj_type == TypeObj.LEX:
             # Lexicographic - just use first expression
             obj_expr = exprs[0]
         else:
@@ -464,7 +580,7 @@ class CPOCallbacks(BaseCallbacks):
 
         self._objective_expr = obj_expr
         self._minimize = minimize
-        self._log(2, f"Set {'minimize' if minimize else 'maximize'} objective")
+        self._log(2, f"Set {'minimize' if minimize else 'maximize'} objective ({obj_type})")
 
     # ========== Solving ==========
 
