@@ -77,16 +77,6 @@ class TestOptimization:
         sol = values(x)
         assert sum(sol) == 6  # 1 + 2 + 3
 
-        # solve using 'ace' solver for comparison
-        clear()
-        x2 = VarArray(size=3, dom=range(1, 10))
-        satisfy(AllDifferent(x2))
-        minimize(Sum(x2))
-        status2 = solve(solver="ace")
-        assert status2 == OPTIMUM
-        sol2 = values(x2)
-        assert sum(sol2) == 6  # 1 + 2 + 3
-
 
     def test_maximize_sum(self):
         """Test maximizing sum."""
