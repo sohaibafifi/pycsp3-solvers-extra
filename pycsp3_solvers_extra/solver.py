@@ -116,7 +116,7 @@ def _solve_native(
         solver=solver_str,
         options=options,
         filename=filename,
-        verbose=verbose,
+        verbose=-1,
     )
 
 

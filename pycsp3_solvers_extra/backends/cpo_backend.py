@@ -860,6 +860,9 @@ class CPOCallbacks(BaseCallbacks):
                 params['SolutionLimit'] = 0  # All solutions
             elif isinstance(self.sols, int):
                 params['SolutionLimit'] = self.sols
+        if self.verbose <= 0:
+            params['LogVerbosity'] = "Quiet"
+            params['log_output'] = None
 
         try:
             # Solve

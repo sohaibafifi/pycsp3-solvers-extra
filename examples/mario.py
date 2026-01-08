@@ -49,7 +49,7 @@ for solver in supported_solvers():
         Sum((s[i] != i) * golds[i] for i in range(nHouses) if i not in {marioHouse, luigiHouse})
     )
 
-    if solve(solver=solver, verbose=False) in [SAT, OPTIMUM]:
+    if solve(solver=solver) in [SAT, OPTIMUM]:
         print("Collected gold:", bound())
 
     clear()
