@@ -361,3 +361,58 @@ class TestIntensionConstraints:
         assert status in (SAT, OPTIMUM)
 
         assert value(x) * value(y) == 12
+
+
+class TestNValuesConstraints:
+    """Tests for NValues constraint."""
+
+    def test_nvalues_equals(self):
+        """Test NValues equality."""
+        x = VarArray(size=4, dom=range(1, 4))
+        satisfy(NValues(x) == 3)
+
+        status = solve(solver="cpo")
+        assert status in (SAT, OPTIMUM)
+
+        assert len(set(values(x))) == 3
+
+
+class TestSchedulingConstraints:
+    """Tests for scheduling constraints."""
+
+    def test_nooverlap(self):
+        """Test NoOverlap constraint."""
+        origins = VarArray(size=2, dom=range(0, 4))
+        satisfy(NoOverlap(origins=origins, lengths=[2, 2]))
+
+        status = solve(solver="cpo")
+        assert status in (SAT, OPTIMUM)
+
+        s0, s1 = values(origins)
+        assert s0 + 2 <= s1 or s1 + 2 <= s0
+
+    def test_cumulative(self):
+        """Test Cumulative constraint."""
+        origins = VarArray(size=2, dom=range(0, 4))
+        satisfy(Cumulative(origins=origins, lengths=[2, 2], heights=[2, 2]) <= 2)
+
+        status = solve(solver="cpo")
+        assert status in (SAT, OPTIMUM)
+
+        s0, s1 = values(origins)
+        assert s0 + 2 <= s1 or s1 + 2 <= s0
+
+    def test_cumulative_variable_heights(self):
+        """Test Cumulative with variable heights."""
+        origins = VarArray(size=2, dom=range(1))
+        heights = VarArray(size=2, dom=range(1, 3))
+        satisfy(
+            origins[0] == 0,
+            origins[1] == 0,
+            Cumulative(origins=origins, lengths=[2, 2], heights=heights) <= 2,
+        )
+
+        status = solve(solver="cpo")
+        assert status in (SAT, OPTIMUM)
+
+        assert values(heights) == [1, 1]

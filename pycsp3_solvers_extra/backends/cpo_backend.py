@@ -9,6 +9,7 @@ Note: Requires IBM CPLEX Optimization Studio to be installed.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from pycsp3.classes.auxiliary.enums import TypeStatus, TypeConditionOperator, TypeObj
@@ -477,6 +478,31 @@ class CPOCallbacks(BaseCallbacks):
         self._apply_condition(count_expr, condition)
         self._log(2, f"Added Count constraint")
 
+    def ctr_nvalues(self, lst: list[Variable] | list[Node], excepting: None | list[int], condition: Condition):
+        """NValues constraint: number of distinct values."""
+        exprs = self._get_var_or_node_list(lst)
+
+        all_values = set()
+        for item in lst:
+            if isinstance(item, Variable):
+                vals = item.dom.all_values()
+            elif isinstance(item, Node):
+                vals = item.possible_values()
+            else:
+                vals = [item]
+            if isinstance(vals, range):
+                all_values.update(vals)
+            else:
+                all_values.update(vals)
+
+        if excepting:
+            all_values.difference_update(excepting)
+
+        present = [modeler.count(exprs, val) >= 1 for val in sorted(all_values)]
+        nvalues_expr = modeler.sum(present) if present else 0
+        self._apply_condition(nvalues_expr, condition)
+        self._log(2, "Added NValues constraint")
+
     def ctr_atleast(self, lst: list[Variable], value: int, k: int):
         """AtLeast constraint."""
         exprs = self._get_var_list(lst)
@@ -530,6 +556,33 @@ class CPOCallbacks(BaseCallbacks):
         vars2 = self._get_var_list(lst2)
         self.model.add(modeler.inverse(vars1, vars2))
         self._log(2, f"Added Channel constraint")
+
+    def ctr_nooverlap(self, origins: list[Variable], lengths: list[int] | list[Variable], zero_ignored: bool):
+        """NoOverlap constraint (1D)."""
+        intervals = []
+        for i, origin in enumerate(origins):
+            start_var = self.vars[origin.id]
+            start_min = origin.dom.smallest_value()
+            start_max = origin.dom.greatest_value()
+
+            length = lengths[i]
+            if isinstance(length, int):
+                interval = self.model.interval_var(start=(start_min, start_max), length=length, name=f"noov_{i}")
+            else:
+                len_min = length.dom.smallest_value()
+                len_max = length.dom.greatest_value()
+                interval = self.model.interval_var(
+                    start=(start_min, start_max),
+                    length=(len_min, len_max),
+                    name=f"noov_{i}",
+                )
+                self.model.add(modeler.length_of(interval) == self.vars[length.id])
+
+            self.model.add(modeler.start_of(interval) == start_var)
+            intervals.append(interval)
+
+        self.model.add(modeler.no_overlap(intervals))
+        self._log(2, f"Added NoOverlap constraint on {len(intervals)} intervals")
 
     def ctr_circuit(self, lst: list[Variable], start_index: int = 0):
         """Circuit constraint (Hamiltonian cycle)."""
@@ -590,6 +643,134 @@ class CPOCallbacks(BaseCallbacks):
                     self.model.add(vars_list[i] >= vars_list[i + 1] + length)
 
         self._log(2, f"Added Ordered constraint ({operator})")
+
+    def ctr_cumulative(self, origins: list[Variable], lengths: list[int] | list[Variable],
+                       heights: list[int] | list[Variable], condition: Condition):
+        """Cumulative constraint."""
+        from pycsp3.classes.auxiliary.conditions import ConditionValue, ConditionVariable
+
+        intervals = []
+        pulses = []
+        max_height_sum = 0
+
+        for i, origin in enumerate(origins):
+            start_var = self.vars[origin.id]
+            start_min = origin.dom.smallest_value()
+            start_max = origin.dom.greatest_value()
+
+            length = lengths[i]
+            height = heights[i]
+
+            def _build_interval(name_suffix: str, optional: bool):
+                if isinstance(length, int):
+                    interval = self.model.interval_var(
+                        start=(start_min, start_max),
+                        length=length,
+                        optional=optional,
+                        name=f"cum_{i}_{name_suffix}",
+                    )
+                else:
+                    len_min = length.dom.smallest_value()
+                    len_max = length.dom.greatest_value()
+                    interval = self.model.interval_var(
+                        start=(start_min, start_max),
+                        length=(len_min, len_max),
+                        optional=optional,
+                        name=f"cum_{i}_{name_suffix}",
+                    )
+                    length_expr = modeler.length_of(interval) == self.vars[length.id]
+                    if optional:
+                        self.model.add(modeler.if_then(modeler.presence_of(interval), length_expr))
+                    else:
+                        self.model.add(length_expr)
+
+                start_expr = modeler.start_of(interval) == start_var
+                if optional:
+                    self.model.add(modeler.if_then(modeler.presence_of(interval), start_expr))
+                else:
+                    self.model.add(start_expr)
+                return interval
+
+            if isinstance(height, Variable):
+                is_infinite = False
+                if hasattr(height.dom, "is_infinite"):
+                    is_infinite = height.dom.is_infinite()
+                elif hasattr(height.dom, "original_values"):
+                    try:
+                        is_infinite = (
+                            len(height.dom.original_values) == 1
+                            and height.dom.original_values[0] == math.inf
+                        )
+                    except Exception:
+                        is_infinite = False
+                if is_infinite:
+                    raise NotImplementedError(
+                        "Cumulative with infinite height domains is not supported in CPO backend"
+                    )
+                height_values = height.dom.all_values()
+                if isinstance(height_values, range):
+                    height_values = list(height_values)
+                height_values = sorted(height_values)
+                if not height_values:
+                    raise ValueError("Cumulative height domain is empty")
+                if height.dom.smallest_value() < 0:
+                    raise NotImplementedError(
+                        "Cumulative with negative heights is not supported in CPO backend"
+                    )
+
+                intervals_per_height = []
+                presences = []
+                weighted_presence = []
+                for hv in height_values:
+                    interval = _build_interval(f"h{hv}", optional=True)
+                    intervals_per_height.append(interval)
+                    presence = modeler.presence_of(interval)
+                    presences.append(presence)
+                    weighted_presence.append(hv * presence)
+                    pulses.append(modeler.pulse(interval, hv))
+
+                self.model.add(modeler.sum(presences) == 1)
+                self.model.add(self.vars[height.id] == modeler.sum(weighted_presence))
+                max_height_sum += height.dom.greatest_value()
+                intervals.extend(intervals_per_height)
+            else:
+                interval = _build_interval("h", optional=False)
+                intervals.append(interval)
+                pulses.append(modeler.pulse(interval, height))
+                max_height_sum += height
+
+        cumul = modeler.sum(pulses) if pulses else 0
+
+        if isinstance(condition, ConditionValue):
+            capacity = condition.value
+        elif isinstance(condition, ConditionVariable):
+            capacity = self.vars[condition.variable.id]
+        else:
+            raise NotImplementedError(
+                f"Cumulative condition type {type(condition)} not supported"
+            )
+
+        op = condition.operator
+        if op == TypeConditionOperator.LE:
+            self.model.add(modeler.cumul_range(cumul, 0, capacity))
+        elif op == TypeConditionOperator.LT:
+            if isinstance(capacity, int):
+                self.model.add(modeler.cumul_range(cumul, 0, capacity - 1))
+            else:
+                raise NotImplementedError("Cumulative LT with variable capacity not supported")
+        elif op == TypeConditionOperator.GE:
+            self.model.add(modeler.cumul_range(cumul, capacity, max_height_sum))
+        elif op == TypeConditionOperator.GT:
+            if isinstance(capacity, int):
+                self.model.add(modeler.cumul_range(cumul, capacity + 1, max_height_sum))
+            else:
+                raise NotImplementedError("Cumulative GT with variable capacity not supported")
+        elif op == TypeConditionOperator.EQ:
+            self.model.add(modeler.cumul_range(cumul, capacity, capacity))
+        else:
+            raise NotImplementedError(f"Cumulative condition operator {op} not supported")
+
+        self._log(2, f"Added Cumulative constraint on {len(intervals)} tasks")
 
     # ========== Objective callbacks ==========
 
