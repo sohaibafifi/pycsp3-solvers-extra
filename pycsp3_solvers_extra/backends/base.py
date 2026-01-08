@@ -7,7 +7,7 @@ Provides common utilities for translating XCSP3 elements to solver models.
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from pycsp3.classes.auxiliary.conditions import Condition
 from pycsp3.classes.auxiliary.enums import (
@@ -23,6 +23,10 @@ from pycsp3.classes.auxiliary.enums import (
 from pycsp3.classes.main.variables import Variable
 from pycsp3.classes.nodes import Node, TypeNode
 from pycsp3.parser.callbacks import Callbacks
+
+if TYPE_CHECKING:
+    from pycsp3_solvers_extra.transforms.context import TransformContext
+    from pycsp3_solvers_extra.transforms.types import ConstraintCall
 
 
 class BaseCallbacks(Callbacks):
@@ -350,6 +354,20 @@ class BaseCallbacks(Callbacks):
             right = self.vars[right.id]
 
         return (op, expr, right)
+
+    # ========== Transform hooks ==========
+
+    def new_aux_int_var(self, lb: int, ub: int, name_hint: str = "aux") -> Any:
+        """Create an auxiliary integer variable in the backend model."""
+        raise NotImplementedError(
+            "Auxiliary variable creation not implemented for this backend"
+        )
+
+    def decompose_call(
+        self, call: "ConstraintCall", ctx: "TransformContext"
+    ) -> list["ConstraintCall"] | None:
+        """Optionally decompose a constraint into supported calls."""
+        return None
 
     # ========== Utility methods ==========
 

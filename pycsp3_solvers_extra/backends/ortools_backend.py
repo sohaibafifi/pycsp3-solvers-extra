@@ -62,6 +62,19 @@ class ORToolsCallbacks(BaseCallbacks):
         self.vars[x.id] = var
         self._log(2, f"Created var {x.id} in [{min_value}, {max_value}]")
 
+    def new_aux_int_var(self, lb: int, ub: int, name_hint: str = "aux") -> Any:
+        """Create an auxiliary integer variable."""
+        return self.model.NewIntVar(lb, ub, name_hint)
+
+    def decompose_call(self, call, ctx):
+        if call.name != "ctr_among":
+            return None
+        lst, values, k = call.args
+        condition = Condition.build_condition((TypeConditionOperator.EQ, k))
+        from pycsp3_solvers_extra.transforms.types import ConstraintCall
+
+        return [ConstraintCall("ctr_count", (lst, values, condition), {})]
+
     def var_integer(self, x: Variable, values: list[int]):
         """Create integer variable with enumerated domain."""
         domain = cp_model.Domain.FromValues(values)

@@ -169,6 +169,9 @@ def _solve_extra(
             options=options,
         )
 
+        from pycsp3_solvers_extra.transforms import TransformingCallbacks
+        callbacks = TransformingCallbacks(callbacks, backend_name=solver)
+
         # Parse XCSP3 and build solver model
         from pycsp3.parser.xparser import ParserXCSP3, CallbackerXCSP3
 

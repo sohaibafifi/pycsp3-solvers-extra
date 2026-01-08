@@ -161,6 +161,17 @@ class TestCountingConstraints:
         sol = values(x)
         assert sol.count(1) == 2
 
+    def test_among_via_count(self):
+        """Test Among decomposition via Count with multiple values."""
+        x = VarArray(size=5, dom=range(1, 5))
+        satisfy(Count(x, values=[1, 2]) == 3)
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        assert sum(1 for v in sol if v in (1, 2)) == 3
+
 
 class TestElementConstraint:
     """Tests for Element constraint."""
