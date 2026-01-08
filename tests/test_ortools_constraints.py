@@ -1,9 +1,20 @@
-"""Constraint coverage tests for OR-Tools backend."""
+"""Constraint coverage tests for OR-Tools backend.
+
+These tests are skipped if OR-Tools is not available.
+"""
 
 import pytest
 from pycsp3 import *
 from pycsp3.functions import Table
 from pycsp3_solvers_extra import solve
+from pycsp3_solvers_extra.backends import get_backend
+
+ORTOOLS_AVAILABLE = get_backend("ortools") is not None
+
+pytestmark = pytest.mark.skipif(
+    not ORTOOLS_AVAILABLE,
+    reason="OR-Tools backend not available"
+)
 
 
 class TestBasicSatisfaction:
@@ -219,6 +230,20 @@ class TestElementConstraint:
         sol = values(x)
         idx = value(i)
         assert sol[idx] == 5
+
+    def test_element_matrix(self):
+        """Test Element with matrix indices (VarArray[row, col])."""
+        m = VarArray(size=[2, 3], dom=range(1, 7))
+        i = Var(dom=range(2))
+        j = Var(dom=range(3))
+        satisfy(m[i, j] == 5)
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+
+        row = value(i)
+        col = value(j)
+        assert value(m[row][col]) == 5
 
 
 class TestMinMaxConstraints:

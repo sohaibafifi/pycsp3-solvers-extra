@@ -17,7 +17,8 @@ from pycsp3.classes.nodes import Node
 
 from pycsp3_solvers_extra.backends.base import BaseCallbacks
 
-from pycsp3.classes.main.variables import Variable
+from pycsp3.classes.main.variables import Variable, VariableInteger, Domain
+from pycsp3.classes.nodes import TypeNode
 
 # Try to import docplex
 try:
@@ -198,6 +199,36 @@ class CPOCallbacks(BaseCallbacks):
                 for var in lst:
                     calls.append(ConstraintCall("ctr_count", ([var], values, in_values), {}))
             return calls
+        if call.name == "ctr_element_matrix":
+            matrix, row_index, col_index, condition = call.args
+            from pycsp3_solvers_extra.transforms.types import ConstraintCall
+
+            if not matrix or not matrix[0]:
+                raise ValueError("Element matrix must be non-empty")
+            cols = len(matrix[0])
+            if any(len(row) != cols for row in matrix):
+                raise ValueError("Element matrix must be rectangular for decomposition")
+
+            flat = [cell for row in matrix for cell in row]
+            max_index = len(flat) - 1
+            counter = getattr(self, "_aux_counter", 0)
+            while True:
+                aux_id = f"__aux_idx_{counter}"
+                counter += 1
+                if aux_id not in self.vars:
+                    break
+            self._aux_counter = counter
+            aux_var = VariableInteger(aux_id, Domain(range(max_index + 1)))
+            self.vars[aux_id] = self.new_aux_int_var(0, max_index, aux_id)
+
+            expr = Node.build(TypeNode.ADD, Node.build(TypeNode.MUL, row_index, cols), col_index)
+            tree = Node.build(TypeNode.EQ, aux_var, expr)
+            scope = list(tree.scope())
+
+            return [
+                ConstraintCall("ctr_intension", (scope, tree), {}),
+                ConstraintCall("ctr_element", (flat, aux_var, condition), {}),
+            ]
         return None
 
     def var_integer(self, x: Variable, values: list[int]):

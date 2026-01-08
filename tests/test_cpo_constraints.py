@@ -214,6 +214,20 @@ class TestElementConstraint:
         idx = value(i)
         assert sol[idx] == 5
 
+    def test_element_matrix(self):
+        """Test Element with matrix indices (VarArray[row, col])."""
+        m = VarArray(size=[2, 3], dom=range(1, 7))
+        i = Var(dom=range(2))
+        j = Var(dom=range(3))
+        satisfy(m[i, j] == 5)
+
+        status = solve(solver="cpo")
+        assert status in (SAT, OPTIMUM)
+
+        row = value(i)
+        col = value(j)
+        assert value(m[row][col]) == 5
+
 
 class TestMinMaxConstraints:
     """Tests for Minimum/Maximum constraints."""
