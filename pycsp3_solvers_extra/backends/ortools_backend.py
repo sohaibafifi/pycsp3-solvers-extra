@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from ortools.sat.python import cp_model
+import ortools.sat.python.cp_model_helper as cmh
 
 from pycsp3.classes.auxiliary.conditions import Condition
 from pycsp3.classes.auxiliary.enums import (
@@ -203,10 +204,33 @@ class ORToolsCallbacks(BaseCallbacks):
         self.model.AddMultiplicationEquality(result, [a, b])
         return result
 
+    def _as_bool_var(self, expr: Any) -> Any:
+        """Return a BoolVar equivalent when expr is a comparison expression."""
+        if hasattr(expr, "Not"):
+            return expr
+        if isinstance(expr, cmh.BoundedLinearExpression):
+            result = self.model.NewBoolVar("")
+            linear_expr = sum(c * v for c, v in zip(expr.coeffs, expr.vars))
+            if expr.offset:
+                linear_expr += expr.offset
+            domain = expr.bounds
+            if domain.is_empty():
+                self.model.Add(result == 0)
+                return result
+            complement = domain.complement()
+            if complement.is_empty():
+                self.model.Add(result == 1)
+                return result
+            self.model.AddLinearExpressionInDomain(linear_expr, domain).OnlyEnforceIf(result)
+            self.model.AddLinearExpressionInDomain(linear_expr, complement).OnlyEnforceIf(result.Not())
+            return result
+        return expr
+
     def _and(self, args: list[Any]) -> Any:
         """Logical AND."""
         if len(args) == 1:
-            return args[0]
+            return self._as_bool_var(args[0])
+        args = [self._as_bool_var(a) for a in args]
         # Create boolean result
         result = self.model.NewBoolVar("")
         self.model.AddBoolAnd(args).OnlyEnforceIf(result)
@@ -216,7 +240,8 @@ class ORToolsCallbacks(BaseCallbacks):
     def _or(self, args: list[Any]) -> Any:
         """Logical OR."""
         if len(args) == 1:
-            return args[0]
+            return self._as_bool_var(args[0])
+        args = [self._as_bool_var(a) for a in args]
         result = self.model.NewBoolVar("")
         self.model.AddBoolOr(args).OnlyEnforceIf(result)
         self.model.AddBoolAnd([a.Not() for a in args]).OnlyEnforceIf(result.Not())
@@ -224,10 +249,11 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def _not(self, a: Any) -> Any:
         """Logical NOT."""
-        return a.Not()
+        return self._as_bool_var(a).Not()
 
     def _xor(self, args: list[Any]) -> Any:
         """Logical XOR (odd number of true)."""
+        args = [self._as_bool_var(a) for a in args]
         if len(args) == 2:
             result = self.model.NewBoolVar("")
             # XOR: exactly one is true
@@ -241,6 +267,8 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def _iff(self, a: Any, b: Any) -> Any:
         """Logical equivalence (a <=> b)."""
+        a = self._as_bool_var(a)
+        b = self._as_bool_var(b)
         result = self.model.NewBoolVar("")
         # a == b
         self.model.Add(a == b).OnlyEnforceIf(result)
@@ -249,6 +277,8 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def _imp(self, a: Any, b: Any) -> Any:
         """Logical implication (a => b)."""
+        a = self._as_bool_var(a)
+        b = self._as_bool_var(b)
         result = self.model.NewBoolVar("")
         # a => b is equivalent to !a or b
         self.model.AddImplication(a, b).OnlyEnforceIf(result)
@@ -258,6 +288,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def _if_then_else(self, cond: Any, then_val: Any, else_val: Any) -> Any:
         """Ternary if-then-else."""
+        cond = self._as_bool_var(cond)
         result = self.model.NewIntVar(-10**9, 10**9, "")
         # result == then_val if cond else else_val
         self.model.Add(result == then_val).OnlyEnforceIf(cond)
@@ -519,15 +550,19 @@ class ORToolsCallbacks(BaseCallbacks):
         # For now, use a simple encoding
         exprs = self._get_var_or_node_list(lst)
 
-        # Get all possible values
-        all_values = set()
-        for e in exprs:
-            if hasattr(e, 'Proto'):
-                # It's a variable - get its domain
-                for i in range(e.Proto().domain_size() // 2):
-                    lb = e.Proto().domain[2 * i]
-                    ub = e.Proto().domain[2 * i + 1]
-                    all_values.update(range(lb, ub + 1))
+        # Get all possible values from pycsp3 objects
+        all_values: set[int] = set()
+        for item in lst:
+            if isinstance(item, Variable):
+                vals = item.dom.all_values()
+            elif isinstance(item, Node):
+                vals = item.possible_values()
+            else:
+                continue
+            if isinstance(vals, range):
+                all_values.update(vals)
+            else:
+                all_values.update(vals)
 
         if excepting:
             all_values -= set(excepting)
@@ -787,6 +822,7 @@ class ORToolsCallbacks(BaseCallbacks):
             expr = self.vars[term.id]
         else:
             expr = self.translate_node(term)
+            expr = self._as_bool_var(expr)
         self.model.Minimize(expr)
         self._log(1, "Set minimization objective")
 
@@ -796,12 +832,13 @@ class ORToolsCallbacks(BaseCallbacks):
             expr = self.vars[term.id]
         else:
             expr = self.translate_node(term)
+            expr = self._as_bool_var(expr)
         self.model.Maximize(expr)
         self._log(1, "Set maximization objective")
 
     def obj_minimize_special(self, obj_type: TypeObj, terms: list[Variable] | list[Node], coefficients: None | list[int]):
         """Minimize special objective (sum, product, etc.)."""
-        exprs = self._get_var_or_node_list(terms)
+        exprs = [self._as_bool_var(e) for e in self._get_var_or_node_list(terms)]
 
         if obj_type == TypeObj.SUM:
             if coefficients is None:
@@ -827,7 +864,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def obj_maximize_special(self, obj_type: TypeObj, terms: list[Variable] | list[Node], coefficients: None | list[int]):
         """Maximize special objective."""
-        exprs = self._get_var_or_node_list(terms)
+        exprs = [self._as_bool_var(e) for e in self._get_var_or_node_list(terms)]
 
         if obj_type == TypeObj.SUM:
             if coefficients is None:
@@ -864,14 +901,17 @@ class ORToolsCallbacks(BaseCallbacks):
             return self._solve_all_solutions()
 
         # Single solution
+        self._objective_value = None
         self._log(1, "Starting OR-Tools solver...")
         status = self.solver.Solve(self.model)
 
         if status == cp_model.OPTIMAL:
             self._extract_solution()
+            self._set_objective_value()
             self._status = TypeStatus.OPTIMUM
         elif status == cp_model.FEASIBLE:
             self._extract_solution()
+            self._set_objective_value()
             self._status = TypeStatus.SAT
         elif status == cp_model.INFEASIBLE:
             self._status = TypeStatus.UNSAT
@@ -883,6 +923,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def _solve_all_solutions(self) -> TypeStatus:
         """Solve and enumerate all/multiple solutions."""
+        self._objective_value = None
         class SolutionCollector(cp_model.CpSolverSolutionCallback):
             def __init__(self, variables, limit, verbose):
                 super().__init__()
@@ -908,6 +949,7 @@ class ORToolsCallbacks(BaseCallbacks):
         if len(collector.solutions) > 0:
             self._all_solutions = collector.solutions
             self._solution = collector.solutions[0]
+            self._set_objective_value()
             self._status = TypeStatus.SAT
         elif status == cp_model.INFEASIBLE:
             self._status = TypeStatus.UNSAT
@@ -922,6 +964,16 @@ class ORToolsCallbacks(BaseCallbacks):
         self._solution = {}
         for var_id, var in self.vars.items():
             self._solution[var_id] = self.solver.Value(var)
+
+    def _set_objective_value(self):
+        """Capture objective value from the solver when present."""
+        if not self.model.HasObjective():
+            self._objective_value = None
+            return
+        obj = self.solver.ObjectiveValue()
+        if isinstance(obj, float) and obj.is_integer():
+            obj = int(obj)
+        self._objective_value = obj
 
     def get_solution(self) -> dict[str, int] | None:
         """Return the solution."""

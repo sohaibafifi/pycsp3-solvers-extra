@@ -584,10 +584,12 @@ class CPOCallbacks(BaseCallbacks):
         self.model.add(modeler.no_overlap(intervals))
         self._log(2, f"Added NoOverlap constraint on {len(intervals)} intervals")
 
-    def ctr_circuit(self, lst: list[Variable], start_index: int = 0):
+    def ctr_circuit(self, lst: list[Variable], start_index: int | None = 0):
         """Circuit constraint (Hamiltonian cycle)."""
         # CPO doesn't have direct circuit, use sub_circuit
         vars_list = self._get_var_list(lst)
+        if start_index is None:
+            start_index = 0
         # Create successor representation for circuit
         # In pycsp3, circuit means: lst[i] = j means edge from i to j
         # We need to enforce that following successors visits all nodes exactly once
@@ -839,6 +841,7 @@ class CPOCallbacks(BaseCallbacks):
     def solve(self) -> TypeStatus:
         """Solve the model and return status."""
         self._log(1, "Starting CPO solver...")
+        self._objective_value = None
 
         # Set objective if any
         if self._objective_expr is not None:
@@ -871,12 +874,18 @@ class CPOCallbacks(BaseCallbacks):
 
             # Map CPO status to TypeStatus
             if solve_status == "Optimal":
+                self._objective_value = self.solution.get_objective_value()
+                self._status = TypeStatus.OPTIMUM
                 return TypeStatus.OPTIMUM
             elif solve_status == "Feasible":
+                self._objective_value = self.solution.get_objective_value()
+                self._status = TypeStatus.SAT
                 return TypeStatus.SAT
             elif solve_status == "Infeasible":
+                self._status = TypeStatus.UNSAT
                 return TypeStatus.UNSAT
             else:
+                self._status = TypeStatus.UNKNOWN
                 return TypeStatus.UNKNOWN
 
         except Exception as e:

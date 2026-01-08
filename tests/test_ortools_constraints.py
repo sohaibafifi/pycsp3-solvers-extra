@@ -87,6 +87,7 @@ class TestOptimization:
 
         sol = values(x)
         assert sum(sol) == 6  # 1 + 2 + 3
+        assert bound() == 6
 
 
     def test_maximize_sum(self):
@@ -100,6 +101,21 @@ class TestOptimization:
 
         sol = values(x)
         assert sum(sol) == 24  # 7 + 8 + 9
+        assert bound() == 24
+
+    def test_maximize_weighted_comparisons(self):
+        """Test maximizing a weighted sum of comparisons."""
+        x = VarArray(size=3, dom=range(3))
+        satisfy(AllDifferent(x))
+        weights = [5, 3, 2]
+        maximize(Sum((x[i] != i) * weights[i] for i in range(3)))
+
+        status = solve(solver="ortools")
+        assert status == OPTIMUM
+
+        sol = values(x)
+        assert all(sol[i] != i for i in range(3))
+        assert bound() == sum(weights)
 
 
 class TestTableConstraints:

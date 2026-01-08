@@ -81,6 +81,7 @@ class BaseCallbacks(Callbacks):
         # Solution storage
         self._solution: dict[str, int] | None = None
         self._status: TypeStatus = TypeStatus.UNKNOWN
+        self._objective_value = None
 
     # ========== Abstract methods to implement ==========
 
@@ -97,6 +98,10 @@ class BaseCallbacks(Callbacks):
     def get_solution(self) -> dict[str, int] | None:
         """Return the solution as {var_id: value} dict, or None if no solution."""
         return self._solution
+
+    def get_objective_value(self):
+        """Return the objective value from the last solve, if any."""
+        return self._objective_value
 
     # ========== Expression tree translation ==========
 

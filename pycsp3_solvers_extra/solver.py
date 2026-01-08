@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from pycsp3 import compile as pycsp3_compile
@@ -195,6 +196,8 @@ def _solve_extra(
         if status in (TypeStatus.SAT, TypeStatus.OPTIMUM):
             _map_solution_to_pycsp3(callbacks)
 
+        _update_pycsp3_solver_state(callbacks, status)
+
         return status
 
     except Exception as e:
@@ -238,3 +241,28 @@ def _map_solution_to_pycsp3(callbacks) -> None:
             for var in item.flatVars:
                 if var is not None and var.id in solution:
                     set_var_value(var, solution[var.id])
+
+
+def _update_pycsp3_solver_state(callbacks, status: TypeStatus) -> None:
+    """Expose extra-solver results through pycsp3 status/bound helpers."""
+    import pycsp3
+
+    solution = callbacks.get_solution() if status in (TypeStatus.SAT, TypeStatus.OPTIMUM) else None
+    n_solutions = 0
+    if status in (TypeStatus.SAT, TypeStatus.OPTIMUM):
+        n_solutions = 1
+        get_all = getattr(callbacks, "get_all_solutions", None)
+        if callable(get_all):
+            all_solutions = get_all()
+            if all_solutions is not None:
+                n_solutions = len(all_solutions)
+
+    bound = callbacks.get_objective_value() if status in (TypeStatus.SAT, TypeStatus.OPTIMUM) else None
+
+    pycsp3._solver = SimpleNamespace(
+        status=status,
+        last_solution=solution,
+        n_solutions=n_solutions,
+        bound=bound,
+        core=None,
+    )

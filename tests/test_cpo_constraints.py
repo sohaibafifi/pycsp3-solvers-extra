@@ -83,6 +83,7 @@ class TestOptimization:
 
         sol = values(x)
         assert sum(sol) == 6  # 1 + 2 + 3
+        assert bound() == 6
 
     def test_maximize_sum(self):
         """Test maximizing sum."""
@@ -95,6 +96,7 @@ class TestOptimization:
 
         sol = values(x)
         assert sum(sol) == 24  # 7 + 8 + 9
+        assert bound() == 24
 
 
 class TestTableConstraints:
