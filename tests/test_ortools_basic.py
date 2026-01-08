@@ -172,6 +172,31 @@ class TestCountingConstraints:
         sol = values(x)
         assert sum(1 for v in sol if v in (1, 2)) == 3
 
+    def test_cardinality_closed(self):
+        """Test Cardinality decomposition with closed values."""
+        x = VarArray(size=5, dom=range(1, 5))
+        satisfy(Cardinality(x, occurrences={1: 2, 2: 3}, closed=True))
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        assert sol.count(1) == 2
+        assert sol.count(2) == 3
+        assert set(sol) <= {1, 2}
+
+    def test_cardinality_range(self):
+        """Test Cardinality decomposition with range occurrences."""
+        x = VarArray(size=4, dom=range(1, 4))
+        satisfy(Cardinality(x, occurrences={1: range(1, 3)}))
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        count_ones = sol.count(1)
+        assert 1 <= count_ones <= 2
+
 
 class TestElementConstraint:
     """Tests for Element constraint."""

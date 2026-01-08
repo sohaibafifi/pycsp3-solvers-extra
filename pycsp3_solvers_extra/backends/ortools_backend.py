@@ -67,13 +67,40 @@ class ORToolsCallbacks(BaseCallbacks):
         return self.model.NewIntVar(lb, ub, name_hint)
 
     def decompose_call(self, call, ctx):
-        if call.name != "ctr_among":
-            return None
-        lst, values, k = call.args
-        condition = Condition.build_condition((TypeConditionOperator.EQ, k))
-        from pycsp3_solvers_extra.transforms.types import ConstraintCall
+        if call.name == "ctr_among":
+            lst, values, k = call.args
+            condition = Condition.build_condition((TypeConditionOperator.EQ, k))
+            from pycsp3_solvers_extra.transforms.types import ConstraintCall
 
-        return [ConstraintCall("ctr_count", (lst, values, condition), {})]
+            return [ConstraintCall("ctr_count", (lst, values, condition), {})]
+        if call.name == "ctr_cardinality":
+            lst, values, occurs, closed = call.args
+            from pycsp3_solvers_extra.transforms.types import ConstraintCall
+
+            def _occ_condition(occ):
+                if isinstance(occ, range):
+                    return Condition.build_condition((TypeConditionOperator.IN, occ))
+                if isinstance(occ, (list, tuple, set, frozenset)):
+                    return Condition.build_condition((TypeConditionOperator.IN, list(occ)))
+                if isinstance(occ, str) and ".." in occ:
+                    parts = occ.split("..", 1)
+                    if len(parts) == 2 and parts[0].lstrip("-").isdigit() and parts[1].lstrip("-").isdigit():
+                        start = int(parts[0])
+                        end = int(parts[1])
+                        if start <= end:
+                            return Condition.build_condition((TypeConditionOperator.IN, range(start, end + 1)))
+                return Condition.build_condition((TypeConditionOperator.EQ, occ))
+
+            calls = [
+                ConstraintCall("ctr_count", (lst, [value], _occ_condition(occ)), {})
+                for value, occ in zip(values, occurs)
+            ]
+            if closed:
+                in_values = Condition.build_condition((TypeConditionOperator.EQ, 1))
+                for var in lst:
+                    calls.append(ConstraintCall("ctr_count", ([var], values, in_values), {}))
+            return calls
+        return None
 
     def var_integer(self, x: Variable, values: list[int]):
         """Create integer variable with enumerated domain."""
