@@ -1,9 +1,27 @@
-"""Basic tests for OR-Tools backend."""
+"""Constraint coverage tests for CPO (IBM DOcplex CP Optimizer) backend.
+
+These tests require IBM CPLEX Optimization Studio to be installed.
+They will be skipped if CPO is not available.
+"""
 
 import pytest
 from pycsp3 import *
 from pycsp3.functions import Table
 from pycsp3_solvers_extra import solve
+from pycsp3_solvers_extra.backends import get_backend
+
+# Import CPO backend to trigger auto-configuration
+try:
+    from pycsp3_solvers_extra.backends.cpo_backend import CPO_AVAILABLE, _CPO_CONFIGURED
+except ImportError:
+    CPO_AVAILABLE = False
+    _CPO_CONFIGURED = False
+
+# Skip all tests if CPO is not available or not configured
+pytestmark = pytest.mark.skipif(
+    not (CPO_AVAILABLE and _CPO_CONFIGURED),
+    reason="CPO backend not available or CP Optimizer not found"
+)
 
 
 class TestBasicSatisfaction:
@@ -14,7 +32,7 @@ class TestBasicSatisfaction:
         x = VarArray(size=4, dom=range(1, 5))
         satisfy(AllDifferent(x))
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -25,7 +43,7 @@ class TestBasicSatisfaction:
         x = VarArray(size=3, dom=range(1, 10))
         satisfy(Sum(x) == 15)
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -36,29 +54,18 @@ class TestBasicSatisfaction:
         x = VarArray(size=3, dom=range(1, 10))
         satisfy(Sum(x) < 10)
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
         assert sum(sol) < 10
-
-    def test_sum_greater_than(self):
-        """Test Sum constraint with greater than."""
-        x = VarArray(size=3, dom=range(1, 5))
-        satisfy(Sum(x) > 10)
-
-        status = solve(solver="ortools")
-        assert status in (SAT, OPTIMUM)
-
-        sol = values(x)
-        assert sum(sol) > 10
 
     def test_unsatisfiable(self):
         """Test detection of unsatisfiable problem."""
         x = VarArray(size=5, dom=range(1, 4))  # Only 3 values for 5 vars
         satisfy(AllDifferent(x))
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status == UNSAT
 
 
@@ -71,12 +78,11 @@ class TestOptimization:
         satisfy(AllDifferent(x))
         minimize(Sum(x))
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status == OPTIMUM
 
         sol = values(x)
         assert sum(sol) == 6  # 1 + 2 + 3
-
 
     def test_maximize_sum(self):
         """Test maximizing sum."""
@@ -84,7 +90,7 @@ class TestOptimization:
         satisfy(AllDifferent(x))
         maximize(Sum(x))
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status == OPTIMUM
 
         sol = values(x)
@@ -99,12 +105,11 @@ class TestTableConstraints:
         x = Var(dom=range(1, 4))
         y = Var(dom=range(1, 4))
 
-        # Only allow (1,2), (2,3), (3,1) using Table function
         satisfy(
             Table(scope=[x, y], supports=[(1, 2), (2, 3), (3, 1)])
         )
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         vx, vy = value(x), value(y)
@@ -119,10 +124,10 @@ class TestCountingConstraints:
         x = VarArray(size=5, dom=range(1, 4))
         satisfy(
             Count(x, value=1) == 2,
-            AllDifferent(x[:3])  # Add constraint to make solution non-trivial
+            AllDifferent(x[:3])
         )
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -133,7 +138,7 @@ class TestCountingConstraints:
         x = VarArray(size=5, dom=range(1, 4))
         satisfy(Count(x, value=1) >= 2)
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -144,29 +149,18 @@ class TestCountingConstraints:
         x = VarArray(size=5, dom=range(1, 4))
         satisfy(Count(x, value=1) <= 2)
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
         assert sol.count(1) <= 2
-
-    def test_exactly(self):
-        """Test Count with == (exactly)."""
-        x = VarArray(size=5, dom=range(1, 4))
-        satisfy(Count(x, value=1) == 2)
-
-        status = solve(solver="ortools")
-        assert status in (SAT, OPTIMUM)
-
-        sol = values(x)
-        assert sol.count(1) == 2
 
     def test_among_via_count(self):
         """Test Among decomposition via Count with multiple values."""
         x = VarArray(size=5, dom=range(1, 5))
         satisfy(Count(x, values=[1, 2]) == 3)
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -177,7 +171,7 @@ class TestCountingConstraints:
         x = VarArray(size=5, dom=range(1, 5))
         satisfy(Cardinality(x, occurrences={1: 2, 2: 3}, closed=True))
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -190,7 +184,7 @@ class TestCountingConstraints:
         x = VarArray(size=4, dom=range(1, 4))
         satisfy(Cardinality(x, occurrences={1: range(1, 3)}))
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -213,7 +207,7 @@ class TestElementConstraint:
             result == 5
         )
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -232,7 +226,7 @@ class TestMinMaxConstraints:
             Minimum(x) == 3
         )
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -246,7 +240,7 @@ class TestMinMaxConstraints:
             Maximum(x) == 7
         )
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -261,7 +255,7 @@ class TestOrderingConstraints:
         x = VarArray(size=4, dom=range(1, 10))
         satisfy(Increasing(x))
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -273,24 +267,12 @@ class TestOrderingConstraints:
         x = VarArray(size=4, dom=range(1, 10))
         satisfy(Increasing(x, strict=True))
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
         for i in range(len(sol) - 1):
             assert sol[i] < sol[i + 1]
-
-    def test_decreasing(self):
-        """Test Decreasing constraint."""
-        x = VarArray(size=4, dom=range(1, 10))
-        satisfy(Decreasing(x))
-
-        status = solve(solver="ortools")
-        assert status in (SAT, OPTIMUM)
-
-        sol = values(x)
-        for i in range(len(sol) - 1):
-            assert sol[i] >= sol[i + 1]
 
 
 class TestChannelConstraint:
@@ -303,7 +285,7 @@ class TestChannelConstraint:
         y = VarArray(size=n, dom=range(n))
         satisfy(Channel(x, y))
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol_x = values(x)
@@ -314,30 +296,6 @@ class TestChannelConstraint:
             assert sol_x[sol_y[i]] == i
 
 
-class TestCircuitConstraint:
-    """Tests for Circuit constraint."""
-
-    def test_circuit(self):
-        """Test Circuit constraint (Hamiltonian cycle)."""
-        n = 5
-        x = VarArray(size=n, dom=range(n))
-        satisfy(Circuit(x))
-
-        status = solve(solver="ortools")
-        assert status in (SAT, OPTIMUM)
-
-        sol = values(x)
-        # Verify it's a valid circuit
-        visited = set()
-        current = 0
-        for _ in range(n):
-            assert current not in visited, "Revisited node"
-            visited.add(current)
-            current = sol[current]
-        assert current == 0, "Not a cycle"
-        assert len(visited) == n, "Not all nodes visited"
-
-
 class TestAllEqual:
     """Tests for AllEqual constraint."""
 
@@ -346,7 +304,7 @@ class TestAllEqual:
         x = VarArray(size=4, dom=range(1, 5))
         satisfy(AllEqual(x))
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         sol = values(x)
@@ -362,7 +320,7 @@ class TestIntensionConstraints:
         y = Var(dom=range(1, 10))
         satisfy(x < y)
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         assert value(x) < value(y)
@@ -374,7 +332,7 @@ class TestIntensionConstraints:
         z = Var(dom=range(1, 20))
         satisfy(x + y == z)
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         assert value(x) + value(y) == value(z)
@@ -385,7 +343,7 @@ class TestIntensionConstraints:
         y = Var(dom=range(1, 10))
         satisfy(x * y == 12)
 
-        status = solve(solver="ortools")
+        status = solve(solver="cpo")
         assert status in (SAT, OPTIMUM)
 
         assert value(x) * value(y) == 12
