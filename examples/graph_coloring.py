@@ -4,20 +4,11 @@ Graph Coloring Problem - Solver Comparison
 Given a graph, assign colors to vertices such that no two adjacent
 vertices have the same color. The goal is to minimize the number
 of colors used (chromatic number).
-
-This example compares the performance of different solvers:
-- ortools: Google OR-Tools CP-SAT
-- cpo: IBM DOcplex CP Optimizer
-- ace: ACE solver (native pycsp3)
-- choco: Choco solver (native pycsp3)
 """
 
-import json
-import os
-import subprocess
-import sys
-import tempfile
-from pathlib import Path
+import time
+from pycsp3 import *
+from pycsp3_solvers_extra import solve
 
 
 # Sample graphs
@@ -48,82 +39,6 @@ GRAPHS = {
 }
 
 
-def solve_graph_coloring(graph_name: str, max_colors: int, solver: str,
-                          time_limit: float = 60, verbose: int = 0) -> dict:
-    """
-    Solve Graph Coloring problem with specified solver.
-    """
-    parent_dir = Path(__file__).parent.parent
-    graph = GRAPHS[graph_name]
-    edges_str = str(graph["edges"])
-
-    script = f'''import sys
-import time
-import json
-sys.argv = ['graph_coloring.py']
-sys.path.insert(0, r"{parent_dir}")
-from pycsp3 import *
-from pycsp3_solvers_extra import solve
-
-n = {graph["vertices"]}
-edges = {edges_str}
-max_colors = {max_colors}
-
-color = VarArray(size=n, dom=range(max_colors))
-
-satisfy(
-    [color[i] != color[j] for i, j in edges]
-)
-
-minimize(Maximum(color))
-
-start = time.time()
-try:
-    status = solve(solver="{solver}", time_limit={time_limit}, verbose={verbose})
-    elapsed = time.time() - start
-    if status in (SAT, OPTIMUM):
-        solution = values(color)
-        num_colors = max(solution) + 1
-    else:
-        solution = None
-        num_colors = None
-    result = {{"status": str(status), "solution": solution, "num_colors": num_colors, "time": elapsed}}
-except Exception as e:
-    import traceback
-    elapsed = time.time() - start
-    result = {{"status": f"ERROR: {{e}}", "solution": None, "num_colors": None, "time": elapsed, "tb": traceback.format_exc()}}
-
-print("RESULT:" + json.dumps(result))
-'''
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-        f.write(script)
-        tmp_path = f.name
-
-    try:
-        result = subprocess.run(
-            [sys.executable, tmp_path],
-            capture_output=True,
-            text=True,
-            timeout=time_limit + 30
-        )
-        for line in result.stdout.splitlines():
-            if line.startswith("RESULT:"):
-                data = json.loads(line[7:])
-                if "tb" in data and "ERROR" in data["status"]:
-                    print(f"  Traceback: {data['tb'][:300]}")
-                return data
-        error = result.stderr.strip() if result.stderr else result.stdout.strip() or "No output"
-        if result.stderr:
-            print(f"  STDERR: {result.stderr[:300]}")
-        return {"status": f"ERROR: {error[:100]}", "solution": None, "num_colors": None, "time": 0}
-    except subprocess.TimeoutExpired:
-        return {"status": "TIMEOUT", "solution": None, "num_colors": None, "time": time_limit}
-    except Exception as e:
-        return {"status": f"ERROR: {e}", "solution": None, "num_colors": None, "time": 0}
-    finally:
-        os.unlink(tmp_path)
-
-
 def main():
     """Run Graph Coloring comparison across solvers."""
     import argparse
@@ -137,8 +52,8 @@ def main():
     parser.add_argument("-t", "--time-limit", type=float, default=60,
                         help="Time limit in seconds (default: 60)")
     parser.add_argument("-v", "--verbose", type=int, default=0, help="Verbosity level")
-    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco"],
-                        help="Solvers to compare (default: ortools ace choco)")
+    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo"],
+                        help="Solvers to compare")
     args = parser.parse_args()
 
     graph = GRAPHS[args.graph]
@@ -155,15 +70,39 @@ def main():
     results = {}
     for solver in args.solvers:
         print(f"Solving with {solver}...")
-        result = solve_graph_coloring(args.graph, args.max_colors, solver,
-                                       args.time_limit, args.verbose)
-        results[solver] = result
-        print(f"  Status:     {result['status']}")
-        print(f"  Time:       {result['time']:.4f}s")
-        if result['solution']:
-            print(f"  Colors:     {result['num_colors']}")
-            print(f"  Coloring:   {result['solution']}")
+
+        n = graph["vertices"]
+        edges = graph["edges"]
+        color = VarArray(size=n, dom=range(args.max_colors))
+
+        satisfy(
+            [color[i] != color[j] for i, j in edges]
+        )
+
+        minimize(Maximum(color))
+
+        start = time.time()
+        try:
+            status = solve(solver=solver, time_limit=args.time_limit, verbose=args.verbose)
+            elapsed = time.time() - start
+            if status in (SAT, OPTIMUM):
+                solution = values(color)
+                num_colors = max(solution) + 1
+            else:
+                solution = None
+                num_colors = None
+            results[solver] = {"status": str(status), "solution": solution, "num_colors": num_colors, "time": elapsed}
+        except Exception as e:
+            elapsed = time.time() - start
+            results[solver] = {"status": f"ERROR: {e}", "solution": None, "num_colors": None, "time": elapsed}
+
+        print(f"  Status:     {results[solver]['status']}")
+        print(f"  Time:       {results[solver]['time']:.4f}s")
+        if results[solver]['solution']:
+            print(f"  Colors:     {results[solver]['num_colors']}")
+            print(f"  Coloring:   {results[solver]['solution']}")
         print()
+        clear()
 
     # Print comparison table
     print(f"\n{'='*60}")

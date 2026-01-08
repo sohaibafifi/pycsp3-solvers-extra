@@ -200,6 +200,11 @@ def _solve_extra(
         raise
 
     finally:
+        # Re-enable OpOverrider since xparser.py disables it on import
+        # This is needed so that Variable.__add__ etc. work for subsequent models
+        from pycsp3.tools.curser import OpOverrider
+        OpOverrider.enable()
+
         # Clean up temporary file
         if tmp_filename is not None and os.path.exists(tmp_filename):
             os.unlink(tmp_filename)
