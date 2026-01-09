@@ -22,6 +22,7 @@ from pycsp3.classes.auxiliary.enums import (
     TypeRank,
     TypeObj,
     TypeStatus,
+    TypeVar,
 )
 from pycsp3.classes.main.variables import Variable, VariableInteger, Domain
 from pycsp3.classes.nodes import Node, TypeNode
@@ -54,6 +55,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
         # For multi-solution enumeration
         self._all_solutions: list[dict[str, int]] = []
+        self._bounds_cache: dict[int, tuple[int, int]] = {}
 
     # ========== Variable creation ==========
 
@@ -146,6 +148,184 @@ class ORToolsCallbacks(BaseCallbacks):
         var = self.model.NewIntVar(0, len(values) - 1, x.id)
         self.vars[x.id] = var
         self._log(2, f"Created symbolic var {x.id} with {len(values)} values")
+
+    # ========== Bound helpers ==========
+
+    def _bounds_from_values(self, values) -> tuple[int, int]:
+        if isinstance(values, range):
+            return values.start, values.stop - 1
+        if isinstance(values, (list, tuple, set)):
+            values = list(values)
+            if not values:
+                return 0, 0
+            if isinstance(values[0], str):
+                return 0, len(values) - 1
+            return min(values), max(values)
+        if isinstance(values, int):
+            return values, values
+        return 0, 0
+
+    def _div_bounds(self, lb1: int, ub1: int, lb2: int, ub2: int) -> tuple[int, int]:
+        max_num_abs = max(abs(lb1), abs(ub1))
+        if lb2 <= 0 <= ub2:
+            if lb2 == 0 and ub2 == 0:
+                return 0, 0
+            min_abs_den = 1
+        else:
+            min_abs_den = min(abs(lb2), abs(ub2))
+            if min_abs_den == 0:
+                min_abs_den = 1
+        max_q = max_num_abs // min_abs_den
+        return -max_q, max_q
+
+    def _mod_bounds(self, lb2: int, ub2: int) -> tuple[int, int]:
+        max_abs = max(abs(lb2), abs(ub2))
+        if max_abs == 0:
+            return 0, 0
+        max_mod = max_abs - 1
+        return -max_mod, max_mod
+
+    def _node_bounds(self, node: Node) -> tuple[int, int]:
+        cache_key = id(node)
+        if cache_key in self._bounds_cache:
+            return self._bounds_cache[cache_key]
+
+        if node.type.is_predicate_operator():
+            bounds = (0, 1)
+        elif node.type == TypeNode.VAR:
+            dom = node.cnt.dom
+            if dom.type == TypeVar.SYMBOLIC:
+                values = dom.all_values()
+                bounds = (0, len(values) - 1) if values else (0, 0)
+            else:
+                bounds = (dom.smallest_value(), dom.greatest_value())
+        elif node.type == TypeNode.INT:
+            bounds = (node.cnt, node.cnt)
+        elif node.type == TypeNode.SYMBOL:
+            bounds = (node.cnt, node.cnt) if isinstance(node.cnt, int) else (0, 0)
+        elif node.type == TypeNode.NEG:
+            lb, ub = self._node_bounds(node.cnt[0])
+            bounds = (-ub, -lb)
+        elif node.type == TypeNode.ABS:
+            lb, ub = self._node_bounds(node.cnt[0])
+            max_abs = max(abs(lb), abs(ub))
+            if lb <= 0 <= ub:
+                bounds = (0, max_abs)
+            else:
+                bounds = (min(abs(lb), abs(ub)), max_abs)
+        elif node.type == TypeNode.ADD:
+            lbs, ubs = zip(*(self._node_bounds(c) for c in node.cnt))
+            bounds = (sum(lbs), sum(ubs))
+        elif node.type == TypeNode.SUB:
+            if len(node.cnt) == 1:
+                lb, ub = self._node_bounds(node.cnt[0])
+                bounds = (-ub, -lb)
+            else:
+                lb1, ub1 = self._node_bounds(node.cnt[0])
+                lb2, ub2 = self._node_bounds(node.cnt[1])
+                bounds = (lb1 - ub2, ub1 - lb2)
+        elif node.type == TypeNode.MUL:
+            lb, ub = 1, 1
+            for child in node.cnt:
+                clb, cub = self._node_bounds(child)
+                candidates = (lb * clb, lb * cub, ub * clb, ub * cub)
+                lb, ub = min(candidates), max(candidates)
+            bounds = (lb, ub)
+        elif node.type == TypeNode.DIV:
+            lb1, ub1 = self._node_bounds(node.cnt[0])
+            lb2, ub2 = self._node_bounds(node.cnt[1])
+            bounds = self._div_bounds(lb1, ub1, lb2, ub2)
+        elif node.type == TypeNode.MOD:
+            lb2, ub2 = self._node_bounds(node.cnt[1])
+            bounds = self._mod_bounds(lb2, ub2)
+        elif node.type == TypeNode.MIN:
+            lbs, ubs = zip(*(self._node_bounds(c) for c in node.cnt))
+            bounds = (min(lbs), min(ubs))
+        elif node.type == TypeNode.MAX:
+            lbs, ubs = zip(*(self._node_bounds(c) for c in node.cnt))
+            bounds = (max(lbs), max(ubs))
+        elif node.type == TypeNode.DIST:
+            lb1, ub1 = self._node_bounds(node.cnt[0])
+            lb2, ub2 = self._node_bounds(node.cnt[1])
+            if ub1 < lb2:
+                min_abs = lb2 - ub1
+            elif ub2 < lb1:
+                min_abs = lb1 - ub2
+            else:
+                min_abs = 0
+            max_abs = max(abs(lb1 - ub2), abs(ub1 - lb2))
+            bounds = (min_abs, max_abs)
+        elif node.type == TypeNode.IF:
+            lb_then, ub_then = self._node_bounds(node.cnt[1])
+            lb_else, ub_else = self._node_bounds(node.cnt[2])
+            bounds = (min(lb_then, lb_else), max(ub_then, ub_else))
+        else:
+            bounds = self._bounds_from_values(node.possible_values())
+
+        self._bounds_cache[cache_key] = bounds
+        return bounds
+
+    def _as_int_expr(self, expr: Any) -> Any:
+        if isinstance(expr, cmh.BoundedLinearExpression):
+            return self._as_bool_var(expr)
+        return expr
+
+    def translate_node(self, node: Node) -> Any:
+        if node.type == TypeNode.ABS:
+            expr = self._as_int_expr(self.translate_node(node.cnt[0]))
+            lb, ub = self._node_bounds(node)
+            result = self.model.NewIntVar(lb, ub, "")
+            self.model.AddAbsEquality(result, expr)
+            return result
+        if node.type == TypeNode.DIST:
+            left = self._as_int_expr(self.translate_node(node.cnt[0]))
+            right = self._as_int_expr(self.translate_node(node.cnt[1]))
+            lb, ub = self._node_bounds(node)
+            result = self.model.NewIntVar(lb, ub, "")
+            self.model.AddAbsEquality(result, left - right)
+            return result
+        if node.type == TypeNode.MIN:
+            exprs = [self._as_int_expr(self.translate_node(s)) for s in node.cnt]
+            lb, ub = self._node_bounds(node)
+            result = self.model.NewIntVar(lb, ub, "")
+            self.model.AddMinEquality(result, exprs)
+            return result
+        if node.type == TypeNode.MAX:
+            exprs = [self._as_int_expr(self.translate_node(s)) for s in node.cnt]
+            lb, ub = self._node_bounds(node)
+            result = self.model.NewIntVar(lb, ub, "")
+            self.model.AddMaxEquality(result, exprs)
+            return result
+        if node.type == TypeNode.DIV:
+            left = self._as_int_expr(self.translate_node(node.cnt[0]))
+            right = self._as_int_expr(self.translate_node(node.cnt[1]))
+            lb, ub = self._node_bounds(node)
+            result = self.model.NewIntVar(lb, ub, "")
+            self.model.AddDivisionEquality(result, left, right)
+            return result
+        if node.type == TypeNode.MOD:
+            left = self._as_int_expr(self.translate_node(node.cnt[0]))
+            right = self._as_int_expr(self.translate_node(node.cnt[1]))
+            lb, ub = self._node_bounds(node)
+            result = self.model.NewIntVar(lb, ub, "")
+            self.model.AddModuloEquality(result, left, right)
+            return result
+        if node.type == TypeNode.MUL:
+            exprs = [self._as_int_expr(self.translate_node(s)) for s in node.cnt]
+            lb, ub = self._node_bounds(node)
+            result = self.model.NewIntVar(lb, ub, "")
+            self.model.AddMultiplicationEquality(result, exprs)
+            return result
+        if node.type == TypeNode.IF:
+            cond = self._as_bool_var(self.translate_node(node.cnt[0]))
+            then_val = self._as_int_expr(self.translate_node(node.cnt[1]))
+            else_val = self._as_int_expr(self.translate_node(node.cnt[2]))
+            lb, ub = self._node_bounds(node)
+            result = self.model.NewIntVar(lb, ub, "")
+            self.model.Add(result == then_val).OnlyEnforceIf(cond)
+            self.model.Add(result == else_val).OnlyEnforceIf(cond.Not())
+            return result
+        return super().translate_node(node)
 
     # ========== OR-Tools specific expression operations ==========
 
