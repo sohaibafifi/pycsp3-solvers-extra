@@ -43,6 +43,19 @@ status = solve(solver="ace")
 print([v.value for v in x])
 ```
 
+### Loading XCSP3 instances
+
+```python
+from pycsp3 import clear, solution
+from pycsp3_solvers_extra import load, solve
+
+clear()
+load("path/to/instance.xml.lzma")  # or .xml
+status = solve(solver="ortools", time_limit=10)
+print(status)
+print(solution())
+```
+
 ## API
 
 ```python
@@ -63,6 +76,7 @@ See the `examples/` directory:
 
 ```bash
 python examples/send_more_money.py --solvers ortools cpo
+python examples/solve_xcsp.py path/to/instance.xml.lzma --solver ortools --time-limit 10
 ```
 
 ## Running Tests

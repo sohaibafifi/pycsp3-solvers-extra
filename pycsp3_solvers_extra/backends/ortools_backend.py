@@ -210,7 +210,7 @@ class ORToolsCallbacks(BaseCallbacks):
             return expr
         if isinstance(expr, cmh.BoundedLinearExpression):
             result = self.model.NewBoolVar("")
-            linear_expr = sum(c * v for c, v in zip(expr.coeffs, expr.vars))
+            linear_expr = cp_model.LinearExpr.Sum([c * v for c, v in zip(expr.coeffs, expr.vars)])
             if expr.offset:
                 linear_expr += expr.offset
             domain = expr.bounds
@@ -225,6 +225,24 @@ class ORToolsCallbacks(BaseCallbacks):
             self.model.AddLinearExpressionInDomain(linear_expr, complement).OnlyEnforceIf(result.Not())
             return result
         return expr
+
+    def _linear_sum(self, exprs: list[Any]) -> Any:
+        """Build a linear sum from expressions, handling boolean expressions safely."""
+        exprs = [self._as_bool_var(e) for e in exprs]
+        if not exprs:
+            return 0
+        if len(exprs) == 1:
+            return exprs[0]
+        return cp_model.LinearExpr.Sum(exprs)
+
+    def _weighted_sum(self, exprs: list[Any], coefficients: list[int]) -> Any:
+        """Build a weighted sum from expressions, handling boolean expressions safely."""
+        exprs = [self._as_bool_var(e) for e in exprs]
+        if not exprs:
+            return 0
+        if len(exprs) == 1:
+            return coefficients[0] * exprs[0]
+        return cp_model.LinearExpr.WeightedSum(exprs, coefficients)
 
     def _and(self, args: list[Any]) -> Any:
         """Logical AND."""
@@ -412,14 +430,14 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def ctr_sum(self, lst: list[Variable] | list[Node], coefficients: None | list[int] | list[Variable], condition: Condition):
         """Sum constraint with condition."""
-        exprs = self._get_var_or_node_list(lst)
+        exprs = [self._as_bool_var(e) for e in self._get_var_or_node_list(lst)]
 
         # Build sum expression
         if coefficients is None:
-            sum_expr = sum(exprs)
+            sum_expr = self._linear_sum(exprs)
         else:
             if all(isinstance(c, int) for c in coefficients):
-                sum_expr = sum(c * e for c, e in zip(coefficients, exprs))
+                sum_expr = self._weighted_sum(exprs, coefficients)
             else:
                 # Variable coefficients
                 terms = []
@@ -427,7 +445,7 @@ class ORToolsCallbacks(BaseCallbacks):
                     if isinstance(c, Variable):
                         c = self.vars[c.id]
                     terms.append(self._mul(c, e))
-                sum_expr = sum(terms)
+                sum_expr = self._linear_sum(terms)
 
         # Apply condition
         self._apply_condition_to_model(sum_expr, condition)
@@ -483,7 +501,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
             count_vars.append(in_values)
 
-        count_sum = sum(count_vars)
+        count_sum = self._linear_sum(count_vars)
         self._apply_condition_to_model(count_sum, condition)
         self._log(2, f"Added Count constraint")
 
@@ -500,7 +518,7 @@ class ORToolsCallbacks(BaseCallbacks):
             count_vars.append(eq_var)
 
         # Sum of count_vars >= k
-        self.model.Add(sum(count_vars) >= k)
+        self.model.Add(self._linear_sum(count_vars) >= k)
         self._log(2, f"Added AtLeast constraint: at least {k} of value {value}")
 
     def ctr_atmost(self, lst: list[Variable], value: int, k: int):
@@ -516,7 +534,7 @@ class ORToolsCallbacks(BaseCallbacks):
             count_vars.append(eq_var)
 
         # Sum of count_vars <= k
-        self.model.Add(sum(count_vars) <= k)
+        self.model.Add(self._linear_sum(count_vars) <= k)
         self._log(2, f"Added AtMost constraint: at most {k} of value {value}")
 
     def ctr_exactly(self, lst: list[Variable], value: int, k: int | Variable):
@@ -534,9 +552,9 @@ class ORToolsCallbacks(BaseCallbacks):
         # Sum of count_vars == k
         if isinstance(k, Variable):
             k_var = self.vars[k.id]
-            self.model.Add(sum(count_vars) == k_var)
+            self.model.Add(self._linear_sum(count_vars) == k_var)
         else:
-            self.model.Add(sum(count_vars) == k)
+            self.model.Add(self._linear_sum(count_vars) == k)
         self._log(2, f"Added Exactly constraint: exactly {k} of value {value}")
 
     def ctr_nvalues(self, lst: list[Variable] | list[Node], excepting: None | list[int], condition: Condition):
@@ -577,7 +595,7 @@ class ORToolsCallbacks(BaseCallbacks):
             self.model.AddBoolAnd([v.Not() for v in eq_vars]).OnlyEnforceIf(appears_var.Not())
             appears.append(appears_var)
 
-        nvalues = sum(appears)
+        nvalues = self._linear_sum(appears)
         self._apply_condition_to_model(nvalues, condition)
         self._log(2, f"Added NValues constraint")
 
@@ -880,9 +898,9 @@ class ORToolsCallbacks(BaseCallbacks):
 
         if obj_type == TypeObj.SUM:
             if coefficients is None:
-                obj_expr = sum(exprs)
+                obj_expr = self._linear_sum(exprs)
             else:
-                obj_expr = sum(c * e for c, e in zip(coefficients, exprs))
+                obj_expr = self._weighted_sum(exprs, coefficients)
         elif obj_type == TypeObj.MAXIMUM:
             obj_var = self.model.NewIntVar(-10**9, 10**9, "obj_max")
             self.model.AddMaxEquality(obj_var, exprs)
@@ -906,9 +924,9 @@ class ORToolsCallbacks(BaseCallbacks):
 
         if obj_type == TypeObj.SUM:
             if coefficients is None:
-                obj_expr = sum(exprs)
+                obj_expr = self._linear_sum(exprs)
             else:
-                obj_expr = sum(c * e for c, e in zip(coefficients, exprs))
+                obj_expr = self._weighted_sum(exprs, coefficients)
         elif obj_type == TypeObj.MAXIMUM:
             obj_var = self.model.NewIntVar(-10**9, 10**9, "obj_max")
             self.model.AddMaxEquality(obj_var, exprs)
