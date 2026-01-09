@@ -413,10 +413,16 @@ class CPOCallbacks(BaseCallbacks):
     def ctr_extension_unary(self, x: Variable, values: list[int], positive: bool, flags: set[str]):
         """Unary table constraint."""
         var = self.vars[x.id]
+        expanded = []
+        for v in values:
+            if isinstance(v, range):
+                expanded.extend(v)
+            else:
+                expanded.append(v)
         if positive:
-            self.model.add(modeler.allowed_assignments(var, values))
+            self.model.add(modeler.allowed_assignments(var, expanded))
         else:
-            self.model.add(modeler.forbidden_assignments(var, values))
+            self.model.add(modeler.forbidden_assignments(var, expanded))
         self._log(2, f"Added {'positive' if positive else 'negative'} unary extension")
 
     def ctr_extension(self, scope: list[Variable], tuples: list, positive: bool, flags: set[str]):
@@ -427,6 +433,71 @@ class CPOCallbacks(BaseCallbacks):
         else:
             self.model.add(modeler.forbidden_assignments(vars_list, tuples))
         self._log(2, f"Added {'positive' if positive else 'negative'} extension on {len(scope)} vars")
+
+    def ctr_instantiation(self, lst: list[Variable], values: list[int]):
+        """Instantiation constraint (fix variables to values)."""
+        for var, val in zip(lst, values):
+            self.model.add(self.vars[var.id] == val)
+        self._log(2, f"Added Instantiation constraint on {len(lst)} vars")
+
+    def _binpacking_bins(self, lst: list[Variable], bin_count: int | None = None):
+        min_val = min(v.dom.smallest_value() for v in lst)
+        max_val = max(v.dom.greatest_value() for v in lst)
+        count = bin_count if bin_count is not None else (max_val - min_val + 1)
+        bins = [self.vars[v.id] - min_val if min_val != 0 else self.vars[v.id] for v in lst]
+        return bins, count
+
+    def _binpacking_load_vars(self, sizes: list[int], bin_count: int, limits: None | list[int] | list[Variable]):
+        if not all(isinstance(s, int) for s in sizes):
+            raise NotImplementedError("CPO binpacking only supports constant sizes")
+        total = sum(sizes)
+        loads = []
+        if limits is None:
+            for i in range(bin_count):
+                loads.append(self.model.integer_var(0, total, f"_binload_{i}"))
+        else:
+            for i, limit in enumerate(limits):
+                if isinstance(limit, Variable):
+                    ub = limit.dom.greatest_value()
+                else:
+                    ub = int(limit)
+                loads.append(self.model.integer_var(0, max(0, ub), f"_binload_{i}"))
+        return loads
+
+    def ctr_binpacking(self, lst: list[Variable], sizes: list[int], condition: Condition):
+        """BinPacking with a single condition on each bin load."""
+        bins, bin_count = self._binpacking_bins(lst)
+        loads = self._binpacking_load_vars(sizes, bin_count, None)
+        self.model.add(modeler.pack(loads, bins, sizes))
+        for load in loads:
+            self._apply_condition(load, condition)
+        self._log(2, f"Added BinPacking constraint with condition")
+
+    def ctr_binpacking_limits(self, lst: list[Variable], sizes: list[int], limits: list[int] | list[Variable]):
+        """BinPacking with per-bin limits."""
+        bins, _ = self._binpacking_bins(lst, bin_count=len(limits))
+        loads = self._binpacking_load_vars(sizes, len(limits), limits)
+        self.model.add(modeler.pack(loads, bins, sizes))
+        for load, limit in zip(loads, limits):
+            bound = self.vars[limit.id] if isinstance(limit, Variable) else int(limit)
+            self.model.add(load <= bound)
+        self._log(2, f"Added BinPacking constraint with limits")
+
+    def ctr_binpacking_loads(self, lst: list[Variable], sizes: list[int], loads: list[int] | list[Variable]):
+        """BinPacking with explicit load variables."""
+        bins, _ = self._binpacking_bins(lst, bin_count=len(loads))
+        load_vars = [self.vars[v.id] if isinstance(v, Variable) else int(v) for v in loads]
+        self.model.add(modeler.pack(load_vars, bins, sizes))
+        self._log(2, f"Added BinPacking constraint with loads")
+
+    def ctr_binpacking_conditions(self, lst: list[Variable], sizes: list[int], conditions: list[Condition]):
+        """BinPacking with per-bin conditions."""
+        bins, bin_count = self._binpacking_bins(lst, bin_count=len(conditions))
+        loads = self._binpacking_load_vars(sizes, bin_count, None)
+        self.model.add(modeler.pack(loads, bins, sizes))
+        for load, condition in zip(loads, conditions):
+            self._apply_condition(load, condition)
+        self._log(2, f"Added BinPacking constraint with conditions")
 
     def ctr_all_different(self, scope: list[Variable] | list[Node], excepting: None | list[int]):
         """AllDifferent constraint."""

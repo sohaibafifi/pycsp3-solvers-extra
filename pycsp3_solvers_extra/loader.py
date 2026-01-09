@@ -12,6 +12,7 @@ from pycsp3.classes.main.constraints import (
     ConstraintAllDifferent,
     ConstraintAllDifferentList,
     ConstraintAllDifferentMatrix,
+    ConstraintExtension,
     ConstraintIntension,
     ConstraintLex,
     ConstraintLexMatrix,
@@ -84,6 +85,8 @@ def _convert_argument(arg):
         content_compressible = value
         value = matrix_to_string(value)
     elif arg.type in (TypeCtrArg.SUPPORTS, TypeCtrArg.CONFLICTS) and isinstance(value, list):
+        if value and not isinstance(value[0], (list, tuple)):
+            value = [(v,) for v in value]
         value = table_to_string(value)
     elif arg.type == TypeCtrArg.EXCEPT and isinstance(value, list):
         if _is_list_of_lists(value):
@@ -99,10 +102,35 @@ def _convert_argument(arg):
     return value, content_compressible, lifted, content_ordered
 
 
+def _normalize_unary_table(values: list):
+    normalized = []
+    for v in values:
+        if isinstance(v, range):
+            normalized.extend(v)
+        elif isinstance(v, (list, tuple, set, frozenset)):
+            for item in v:
+                if isinstance(item, range):
+                    normalized.extend(item)
+                else:
+                    normalized.append(item)
+        else:
+            normalized.append(v)
+    return normalized
+
+
 def _constraint_from_xctr(xctr: XCtr) -> Constraint:
     if xctr.type == TypeCtr.INTENSION:
         tree = next(arg.value for arg in xctr.ctr_args if arg.type == TypeCtrArg.FUNCTION)
         constraint = ConstraintIntension(tree)
+    elif xctr.type == TypeCtr.EXTENSION:
+        scope = next(arg.value for arg in xctr.ctr_args if arg.type == TypeCtrArg.LIST)
+        table_arg = next(arg for arg in xctr.ctr_args if arg.type in (TypeCtrArg.SUPPORTS, TypeCtrArg.CONFLICTS))
+        table = table_arg.value
+        if len(scope) == 1 and isinstance(table, list) and table:
+            table = _normalize_unary_table(table)
+        elif isinstance(table, list) and table and isinstance(table[0], list):
+            table = [tuple(t) for t in table]
+        constraint = ConstraintExtension(scope, table, positive=(table_arg.type == TypeCtrArg.SUPPORTS))
     elif xctr.type == TypeCtr.LEX:
         lists = [arg.value for arg in xctr.ctr_args if arg.type == TypeCtrArg.LIST]
         matrix = next((arg.value for arg in xctr.ctr_args if arg.type == TypeCtrArg.MATRIX), None)

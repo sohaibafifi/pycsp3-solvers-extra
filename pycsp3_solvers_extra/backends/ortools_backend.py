@@ -193,6 +193,10 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def _mul(self, a: Any, b: Any) -> Any:
         """Multiplication - handle variable * variable case."""
+        if isinstance(a, cmh.BoundedLinearExpression):
+            a = self._as_bool_var(a)
+        if isinstance(b, cmh.BoundedLinearExpression):
+            b = self._as_bool_var(b)
         if isinstance(a, int) and isinstance(b, int):
             return a * b
         if isinstance(a, int):
@@ -349,10 +353,16 @@ class ORToolsCallbacks(BaseCallbacks):
     def ctr_extension_unary(self, x: Variable, values: list[int], positive: bool, flags: set[str]):
         """Unary table constraint."""
         var = self.vars[x.id]
+        expanded = []
+        for v in values:
+            if isinstance(v, range):
+                expanded.extend(v)
+            else:
+                expanded.append(v)
         if positive:
-            self.model.AddAllowedAssignments([var], [[v] for v in values])
+            self.model.AddAllowedAssignments([var], [[v] for v in expanded])
         else:
-            self.model.AddForbiddenAssignments([var], [[v] for v in values])
+            self.model.AddForbiddenAssignments([var], [[v] for v in expanded])
         self._log(2, f"Added {'positive' if positive else 'negative'} unary extension on {x.id}")
 
     def ctr_extension(self, scope: list[Variable], tuples: list, positive: bool, flags: set[str]):
@@ -689,10 +699,15 @@ class ORToolsCallbacks(BaseCallbacks):
             else:
                 length = self.vars[lengths[i].id]
 
-            # Create interval variable
-            interval = self.model.NewIntervalVar(
-                start, length, start + length, f"interval_{i}"
-            )
+            # Create interval variable (use explicit end var if length is variable)
+            if isinstance(lengths[i], int):
+                end = start + length
+            else:
+                end_lb = origins[i].dom.smallest_value() + lengths[i].dom.smallest_value()
+                end_ub = origins[i].dom.greatest_value() + lengths[i].dom.greatest_value()
+                end = self.model.NewIntVar(end_lb, end_ub, f"interval_{i}_end")
+                self.model.Add(end == start + length)
+            interval = self.model.NewIntervalVar(start, length, end, f"interval_{i}")
             intervals.append(interval)
 
         self.model.AddNoOverlap(intervals)
@@ -712,9 +727,14 @@ class ORToolsCallbacks(BaseCallbacks):
             else:
                 length = self.vars[lengths[i].id]
 
-            interval = self.model.NewIntervalVar(
-                start, length, start + length, f"interval_{i}"
-            )
+            if isinstance(lengths[i], int):
+                end = start + length
+            else:
+                end_lb = origins[i].dom.smallest_value() + lengths[i].dom.smallest_value()
+                end_ub = origins[i].dom.greatest_value() + lengths[i].dom.greatest_value()
+                end = self.model.NewIntVar(end_lb, end_ub, f"interval_{i}_end")
+                self.model.Add(end == start + length)
+            interval = self.model.NewIntervalVar(start, length, end, f"interval_{i}")
             intervals.append(interval)
 
             if isinstance(heights[i], int):
@@ -722,10 +742,12 @@ class ORToolsCallbacks(BaseCallbacks):
             else:
                 demands.append(self.vars[heights[i].id])
 
-        # Get capacity from condition (should be LE with constant)
-        capacity = condition.right_operand
-        if isinstance(capacity, Variable):
-            capacity = self.vars[capacity.id]
+        from pycsp3.classes.auxiliary.conditions import ConditionValue, ConditionVariable
+
+        # Get capacity from condition (supported: LE with constant/variable)
+        if not isinstance(condition, (ConditionValue, ConditionVariable)) or condition.operator != TypeConditionOperator.LE:
+            raise NotImplementedError("OR-Tools cumulative only supports LE capacity conditions")
+        capacity = condition.value if isinstance(condition, ConditionValue) else self.vars[condition.variable.id]
 
         self.model.AddCumulative(intervals, demands, capacity)
         self._log(2, f"Added Cumulative constraint on {n} tasks")
@@ -814,6 +836,79 @@ class ORToolsCallbacks(BaseCallbacks):
         for var, val in zip(lst, values):
             self.model.Add(self.vars[var.id] == val)
         self._log(2, f"Added Instantiation constraint on {len(lst)} vars")
+
+    # ========== Packing constraints ==========
+
+    def _binpacking_values(self, lst: list[Variable], bin_count: int | None):
+        values_set = set()
+        for var in lst:
+            vals = var.dom.all_values()
+            if isinstance(vals, range):
+                values_set.update(vals)
+            else:
+                values_set.update(vals)
+        if not values_set:
+            raise ValueError("BinPacking requires non-empty bin domains")
+        values = sorted(values_set)
+        if bin_count is not None and len(values) != bin_count:
+            min_val = values[0]
+            values = list(range(min_val, min_val + bin_count))
+            allowed = [[v] for v in values]
+            for var in lst:
+                self.model.AddAllowedAssignments([self.vars[var.id]], allowed)
+        return values
+
+    def _binpacking_load_exprs(self, bins: list[Any], sizes: list[int], values: list[int]):
+        if not all(isinstance(s, int) for s in sizes):
+            raise NotImplementedError("OR-Tools binpacking only supports constant sizes")
+        load_exprs = []
+        for value in values:
+            assign_vars = []
+            for bin_var in bins:
+                bvar = self.model.NewBoolVar("")
+                self.model.Add(bin_var == value).OnlyEnforceIf(bvar)
+                self.model.Add(bin_var != value).OnlyEnforceIf(bvar.Not())
+                assign_vars.append(bvar)
+            load_exprs.append(self._weighted_sum(assign_vars, sizes))
+        return load_exprs
+
+    def ctr_binpacking(self, lst: list[Variable], sizes: list[int], condition: Condition):
+        """BinPacking with a single condition on each bin load."""
+        bins = self._get_var_list(lst)
+        values = self._binpacking_values(lst, None)
+        load_exprs = self._binpacking_load_exprs(bins, sizes, values)
+        for load_expr in load_exprs:
+            self._apply_condition_to_model(load_expr, condition)
+        self._log(2, "Added BinPacking constraint with condition")
+
+    def ctr_binpacking_limits(self, lst: list[Variable], sizes: list[int], limits: list[int] | list[Variable]):
+        """BinPacking with per-bin limits."""
+        bins = self._get_var_list(lst)
+        values = self._binpacking_values(lst, len(limits))
+        load_exprs = self._binpacking_load_exprs(bins, sizes, values)
+        for load_expr, limit in zip(load_exprs, limits):
+            bound = self.vars[limit.id] if isinstance(limit, Variable) else int(limit)
+            self.model.Add(load_expr <= bound)
+        self._log(2, "Added BinPacking constraint with limits")
+
+    def ctr_binpacking_loads(self, lst: list[Variable], sizes: list[int], loads: list[int] | list[Variable]):
+        """BinPacking with explicit load variables."""
+        bins = self._get_var_list(lst)
+        values = self._binpacking_values(lst, len(loads))
+        load_exprs = self._binpacking_load_exprs(bins, sizes, values)
+        for load_expr, load in zip(load_exprs, loads):
+            target = self.vars[load.id] if isinstance(load, Variable) else int(load)
+            self.model.Add(load_expr == target)
+        self._log(2, "Added BinPacking constraint with loads")
+
+    def ctr_binpacking_conditions(self, lst: list[Variable], sizes: list[int], conditions: list[Condition]):
+        """BinPacking with per-bin conditions."""
+        bins = self._get_var_list(lst)
+        values = self._binpacking_values(lst, len(conditions))
+        load_exprs = self._binpacking_load_exprs(bins, sizes, values)
+        for load_expr, condition in zip(load_exprs, conditions):
+            self._apply_condition_to_model(load_expr, condition)
+        self._log(2, "Added BinPacking constraint with conditions")
 
     # ========== Primitive constraints (optimized) ==========
 
