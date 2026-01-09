@@ -18,8 +18,9 @@ Example usage:
         print(values(x))
 """
 
+from pycsp3_solvers_extra.loader import load
 from pycsp3_solvers_extra.solver import solve, supported_solvers
 from pycsp3_solvers_extra.backends import get_backend
 
 __version__ = "0.1.0"
-__all__ = ["solve", "supported_solvers", "get_backend"]
+__all__ = ["load", "solve", "supported_solvers", "get_backend"]
