@@ -297,12 +297,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def _in_set(self, val: Any, set_vals: list[Any]) -> Any:
         """Set membership."""
-        if all(isinstance(v, int) for v in set_vals):
-            result = self.model.NewBoolVar("")
-            self.model.AddAllowedAssignments([val], [[v] for v in set_vals]).OnlyEnforceIf(result)
-            self.model.AddForbiddenAssignments([val], [[v] for v in set_vals]).OnlyEnforceIf(result.Not())
-            return result
-        # Variable set - use OR of equalities
+        # Use OR of equalities; works for both variables and linear expressions.
         result = self.model.NewBoolVar("")
         or_vars = []
         for v in set_vals:
@@ -742,16 +737,59 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def ctr_lex(self, lists: list[list[Variable]], operator: TypeOrderedOperator):
         """Lexicographic constraint on lists."""
+        # Encode lex with prefix equality reification; strict adds not-all-equal.
+        def add_lex_pair(vars1: list[Any], vars2: list[Any], strict: bool) -> None:
+            if len(vars1) != len(vars2):
+                raise ValueError("Lex constraint requires lists of equal length")
+            if not vars1:
+                return
+
+            def reify_eq(x, y):
+                eq_var = self.model.NewBoolVar("")
+                self.model.Add(x == y).OnlyEnforceIf(eq_var)
+                self.model.Add(x != y).OnlyEnforceIf(eq_var.Not())
+                return eq_var
+
+            prefix_eq = None
+            all_equal = None
+            for i, (x, y) in enumerate(zip(vars1, vars2)):
+                eq_var = reify_eq(x, y)
+                if i == 0:
+                    self.model.Add(x <= y)
+                    prefix_eq = eq_var
+                elif i < len(vars1) - 1:
+                    self.model.Add(x <= y).OnlyEnforceIf(prefix_eq)
+                    next_prefix = self.model.NewBoolVar("")
+                    self.model.AddBoolAnd([prefix_eq, eq_var]).OnlyEnforceIf(next_prefix)
+                    self.model.AddBoolOr([prefix_eq.Not(), eq_var.Not()]).OnlyEnforceIf(next_prefix.Not())
+                    prefix_eq = next_prefix
+                else:
+                    self.model.Add(x <= y).OnlyEnforceIf(prefix_eq)
+                    all_equal = self.model.NewBoolVar("")
+                    self.model.AddBoolAnd([prefix_eq, eq_var]).OnlyEnforceIf(all_equal)
+                    self.model.AddBoolOr([prefix_eq.Not(), eq_var.Not()]).OnlyEnforceIf(all_equal.Not())
+
+            if strict:
+                if all_equal is None:
+                    all_equal = prefix_eq
+                self.model.Add(all_equal == 0)
+
+        increasing = operator in (TypeOrderedOperator.INCREASING, TypeOrderedOperator.STRICTLY_INCREASING)
+        strict = operator in (TypeOrderedOperator.STRICTLY_INCREASING, TypeOrderedOperator.STRICTLY_DECREASING)
+
         for i in range(len(lists) - 1):
             vars1 = self._get_var_list(lists[i])
             vars2 = self._get_var_list(lists[i + 1])
-
-            if operator in (TypeOrderedOperator.INCREASING, TypeOrderedOperator.STRICTLY_INCREASING):
-                self.model.AddLexLess(vars1, vars2) if operator == TypeOrderedOperator.STRICTLY_INCREASING else self.model.AddLexLessOrEqual(vars1, vars2)
+            if increasing:
+                add_lex_pair(vars1, vars2, strict)
             else:
-                self.model.AddLexLess(vars2, vars1) if operator == TypeOrderedOperator.STRICTLY_DECREASING else self.model.AddLexLessOrEqual(vars2, vars1)
+                add_lex_pair(vars2, vars1, strict)
 
         self._log(2, f"Added Lex constraint on {len(lists)} lists")
+
+    def ctr_lex_matrix(self, matrix: list[list[Variable]], operator: TypeOrderedOperator):
+        """Lexicographic constraint on matrix rows."""
+        self.ctr_lex(matrix, operator)
 
     def ctr_instantiation(self, lst: list[Variable], values: list[int]):
         """Instantiation constraint (fix variables to values)."""
@@ -1004,18 +1042,20 @@ class ORToolsCallbacks(BaseCallbacks):
                 self.model.Add(expr >= condition.min)
                 self.model.Add(expr <= condition.max)
             else:  # NOTIN
-                in_range = self.model.NewBoolVar("")
-                self.model.Add(expr >= condition.min).OnlyEnforceIf(in_range)
-                self.model.Add(expr <= condition.max).OnlyEnforceIf(in_range)
-                self.model.Add(in_range == 0)
+                below = self.model.NewBoolVar("")
+                above = self.model.NewBoolVar("")
+                self.model.Add(expr <= condition.min - 1).OnlyEnforceIf(below)
+                self.model.Add(expr >= condition.max + 1).OnlyEnforceIf(above)
+                self.model.AddBoolOr([below, above])
             return
         elif isinstance(condition, ConditionSet):
             # Set condition
             values = list(condition.t)
+            in_set = self._in_set(expr, values)
             if op == TypeConditionOperator.IN:
-                self.model.AddAllowedAssignments([expr], [[v] for v in values])
+                self.model.Add(in_set == 1)
             else:  # NOTIN
-                self.model.AddForbiddenAssignments([expr], [[v] for v in values])
+                self.model.Add(in_set == 0)
             return
         elif isinstance(condition, ConditionNode):
             right = self.translate_node(condition.node)
@@ -1044,15 +1084,18 @@ class ORToolsCallbacks(BaseCallbacks):
                 self.model.Add(expr >= right.start)
                 self.model.Add(expr < right.stop)
             else:
-                self.model.AddAllowedAssignments([expr], [[v] for v in right])
+                in_set = self._in_set(expr, list(right))
+                self.model.Add(in_set == 1)
         elif op == TypeConditionOperator.NOTIN:
             if isinstance(right, range):
                 # Not in range: expr < start OR expr >= stop
-                in_range = self.model.NewBoolVar("")
-                self.model.Add(expr >= right.start).OnlyEnforceIf(in_range)
-                self.model.Add(expr < right.stop).OnlyEnforceIf(in_range)
-                self.model.Add(in_range == 0)
+                below = self.model.NewBoolVar("")
+                above = self.model.NewBoolVar("")
+                self.model.Add(expr <= right.start - 1).OnlyEnforceIf(below)
+                self.model.Add(expr >= right.stop).OnlyEnforceIf(above)
+                self.model.AddBoolOr([below, above])
             else:
-                self.model.AddForbiddenAssignments([expr], [[v] for v in right])
+                in_set = self._in_set(expr, list(right))
+                self.model.Add(in_set == 0)
         else:
             raise NotImplementedError(f"Condition operator {op} not implemented")

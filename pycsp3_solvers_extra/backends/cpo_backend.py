@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from pycsp3.classes.auxiliary.enums import TypeStatus, TypeConditionOperator, TypeObj
+from pycsp3.classes.auxiliary.enums import TypeStatus, TypeConditionOperator, TypeObj, TypeOrderedOperator
 from pycsp3.classes.auxiliary.conditions import Condition
 from pycsp3.classes.nodes import Node
 
@@ -26,11 +26,13 @@ try:
     from docplex.cp.model import CpoModel
     from docplex.cp.solution import CpoSolveResult
     import docplex.cp.modeler as modeler
+    from docplex.cp.catalog import Type_BoolExpr
     from docplex.cp.config import context as cpo_context
     CPO_AVAILABLE = True
 except ImportError:
     CPO_AVAILABLE = False
     cpo_context = None
+    Type_BoolExpr = None
 
 
 def _configure_cpoptimizer():
@@ -271,6 +273,14 @@ class CPOCallbacks(BaseCallbacks):
                 result.append(self.vars[item.id])
         return result
 
+    def _as_bool_expr(self, expr: Any) -> Any:
+        """Coerce numeric expressions to boolean CP expressions."""
+        if isinstance(expr, bool):
+            return expr
+        if Type_BoolExpr is not None and hasattr(expr, "is_kind_of") and expr.is_kind_of(Type_BoolExpr):
+            return expr
+        return expr != 0
+
     def translate_node(self, node: Node) -> Any:
         """Translate expression tree node to CPO expression."""
         from pycsp3.classes.nodes import TypeNode
@@ -320,19 +330,21 @@ class CPOCallbacks(BaseCallbacks):
         elif node.type == TypeNode.GE:
             return self.translate_node(node.cnt[0]) >= self.translate_node(node.cnt[1])
         elif node.type == TypeNode.AND:
-            return modeler.logical_and([self.translate_node(c) for c in node.cnt])
+            return modeler.logical_and([self._as_bool_expr(self.translate_node(c)) for c in node.cnt])
         elif node.type == TypeNode.OR:
-            return modeler.logical_or([self.translate_node(c) for c in node.cnt])
+            return modeler.logical_or([self._as_bool_expr(self.translate_node(c)) for c in node.cnt])
         elif node.type == TypeNode.NOT:
-            return modeler.logical_not(self.translate_node(node.cnt[0]))
+            return modeler.logical_not(self._as_bool_expr(self.translate_node(node.cnt[0])))
         elif node.type == TypeNode.IMP:
-            a, b = self.translate_node(node.cnt[0]), self.translate_node(node.cnt[1])
+            a = self._as_bool_expr(self.translate_node(node.cnt[0]))
+            b = self._as_bool_expr(self.translate_node(node.cnt[1]))
             return modeler.if_then(a, b)
         elif node.type == TypeNode.IFF:
-            a, b = self.translate_node(node.cnt[0]), self.translate_node(node.cnt[1])
+            a = self._as_bool_expr(self.translate_node(node.cnt[0]))
+            b = self._as_bool_expr(self.translate_node(node.cnt[1]))
             return a == b
         elif node.type == TypeNode.IF:
-            cond = self.translate_node(node.cnt[0])
+            cond = self._as_bool_expr(self.translate_node(node.cnt[0]))
             then_val = self.translate_node(node.cnt[1])
             else_val = self.translate_node(node.cnt[2])
             return modeler.conditional(cond, then_val, else_val)
@@ -645,6 +657,27 @@ class CPOCallbacks(BaseCallbacks):
                     self.model.add(vars_list[i] >= vars_list[i + 1] + length)
 
         self._log(2, f"Added Ordered constraint ({operator})")
+
+    def ctr_lex(self, lists: list[list[Variable]], operator: TypeOrderedOperator):
+        """Lexicographic constraint on lists."""
+        for i in range(len(lists) - 1):
+            left = self._get_var_list(lists[i])
+            right = self._get_var_list(lists[i + 1])
+            if operator == TypeOrderedOperator.STRICTLY_INCREASING:
+                self.model.add(modeler.strict_lexicographic(left, right))
+            elif operator == TypeOrderedOperator.INCREASING:
+                self.model.add(modeler.lexicographic(left, right))
+            elif operator == TypeOrderedOperator.STRICTLY_DECREASING:
+                self.model.add(modeler.strict_lexicographic(right, left))
+            elif operator == TypeOrderedOperator.DECREASING:
+                self.model.add(modeler.lexicographic(right, left))
+            else:
+                raise NotImplementedError(f"Unknown lex operator: {operator}")
+        self._log(2, f"Added Lex constraint on {len(lists)} lists")
+
+    def ctr_lex_matrix(self, matrix: list[list[Variable]], operator: TypeOrderedOperator):
+        """Lexicographic constraint on matrix rows."""
+        self.ctr_lex(matrix, operator)
 
     def ctr_cumulative(self, origins: list[Variable], lengths: list[int] | list[Variable],
                        heights: list[int] | list[Variable], condition: Condition):
