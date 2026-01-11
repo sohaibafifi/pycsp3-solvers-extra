@@ -1117,6 +1117,12 @@ class Z3Callbacks(BaseCallbacks):
             else:
                 solver.maximize(self._objective)
 
+        want_all = self.sols == "all" or (isinstance(self.sols, int) and self.sols > 1)
+        if want_all and not self._has_objective:
+            limit = None if self.sols == "all" else int(self.sols)
+            return self._solve_all_solutions(solver, limit)
+        self._all_solutions = []
+
         self._log(1, f"Starting Z3 solver...")
         self._log(1, f"  Variables: {len(self.vars)}")
         self._log(1, f"  Constraints: {len(self._constraints)} + {len(self._domain_constraints)} domain")
@@ -1170,6 +1176,55 @@ class Z3Callbacks(BaseCallbacks):
             self._log(1, f"Solver finished: UNKNOWN")
             return TypeStatus.UNKNOWN
 
+    def _solve_all_solutions(self, solver: Solver, limit: int | None) -> TypeStatus:
+        """Enumerate all/multiple solutions for satisfaction problems."""
+        self._all_solutions = []
+
+        while True:
+            result = solver.check()
+            if result != sat:
+                break
+
+            model = solver.model()
+            sol: dict[str, int] = {}
+            for var_id, var in self.vars.items():
+                val = model.eval(var, model_completion=True)
+                if val is not None:
+                    try:
+                        sol[var_id] = val.as_long()
+                    except AttributeError:
+                        sol[var_id] = 0
+            if sol:
+                self._all_solutions.append(sol)
+
+            if limit is not None and len(self._all_solutions) >= limit:
+                break
+
+            if not sol:
+                break
+
+            block = Or([self.vars[var_id] != val for var_id, val in sol.items()])
+            solver.add(block)
+
+        if self._all_solutions:
+            self._solution = self._all_solutions[-1]
+            self._status = TypeStatus.SAT
+            self._log(1, f"Solver finished: SAT ({len(self._all_solutions)} solutions)")
+            return TypeStatus.SAT
+
+        if result == unsat:
+            self._status = TypeStatus.UNSAT
+            self._log(1, "Solver finished: UNSAT")
+            return TypeStatus.UNSAT
+
+        self._status = TypeStatus.UNKNOWN
+        self._log(1, "Solver finished: UNKNOWN")
+        return TypeStatus.UNKNOWN
+
     def get_solution(self) -> dict[str, int] | None:
         """Return the solution as {var_id: value} dict, or None if no solution."""
         return self._solution
+
+    def get_all_solutions(self) -> list[dict[str, int]]:
+        """Return all solutions found."""
+        return self._all_solutions

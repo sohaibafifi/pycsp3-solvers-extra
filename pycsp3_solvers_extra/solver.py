@@ -103,13 +103,19 @@ def _solve_native(
     solver_str = f"[{solver}"
     if verbose > 0:
         solver_str += "," + "v" * min(verbose, 3)
+    limit_parts: list[str] = []
     if time_limit is not None:
-        solver_str += f",t={int(time_limit)}s"
+        limit_parts.append(f"{int(time_limit)}s")
     if sols is not None:
         if sols == "all" or sols == ALL:
-            solver_str += ",limit=no"
+            limit_parts.append("no")
         elif isinstance(sols, int):
-            solver_str += f",limit={sols}sols"
+            limit_parts.append(f"{sols}sols")
+    if limit_parts:
+        if len(limit_parts) == 1:
+            solver_str += f",limit={limit_parts[0]}"
+        else:
+            solver_str += ",limit=[" + ",".join(limit_parts) + "]"
     solver_str += "]"
 
     return pycsp3_solve(
@@ -220,6 +226,31 @@ def _map_solution_to_pycsp3(callbacks) -> None:
     """Map solution from backend to pycsp3 Variable.value/values attributes."""
     from pycsp3.classes.entities import VarEntities, EVar, EVarArray
 
+    get_all = getattr(callbacks, "get_all_solutions", None)
+    all_solutions = get_all() if callable(get_all) else None
+
+    if all_solutions:
+        solutions = [sol for sol in all_solutions if sol]
+
+        def set_var_values(var, values):
+            var.values = values
+            var.value = values[-1] if values else None
+
+        for item in VarEntities.items:
+            if isinstance(item, EVar):
+                var = item.variable
+                values = [sol[var.id] for sol in solutions if var.id in sol]
+                if values:
+                    set_var_values(var, values)
+            elif isinstance(item, EVarArray):
+                for var in item.flatVars:
+                    if var is None:
+                        continue
+                    values = [sol[var.id] for sol in solutions if var.id in sol]
+                    if values:
+                        set_var_values(var, values)
+        return
+
     solution = callbacks.get_solution()
     if solution is None:
         return
@@ -229,7 +260,7 @@ def _map_solution_to_pycsp3(callbacks) -> None:
         var.value = value
         if not hasattr(var, 'values') or var.values is None:
             var.values = []
-        var.values.append(value)
+        var.values = [value]
 
     # Map solution values back to pycsp3 variables
     for item in VarEntities.items:
@@ -254,7 +285,7 @@ def _update_pycsp3_solver_state(callbacks, status: TypeStatus) -> None:
         get_all = getattr(callbacks, "get_all_solutions", None)
         if callable(get_all):
             all_solutions = get_all()
-            if all_solutions is not None:
+            if all_solutions:
                 n_solutions = len(all_solutions)
 
     bound = callbacks.get_objective_value() if status in (TypeStatus.SAT, TypeStatus.OPTIMUM) else None

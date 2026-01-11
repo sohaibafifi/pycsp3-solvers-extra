@@ -99,7 +99,7 @@ See the `examples/` directory:
 ```bash
 python examples/send_more_money.py --solvers ortools z3 cpo
 python examples/solve_xcsp.py path/to/instance.xml.lzma --solver z3 --time-limit 10
-python examples/solve_xcsp.py path/to/instance.xml.lzma --solver ace --options="-positive=CT2"
+python examples/solve_xcsp.py path/to/instance.xml.lzma --solver ace --options="-positive=CT -sts"
 ```
 
 ## Running Tests

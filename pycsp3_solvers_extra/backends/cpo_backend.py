@@ -155,6 +155,7 @@ class CPOCallbacks(BaseCallbacks):
         self.solution: CpoSolveResult | None = None
         self._objective_expr = None
         self._minimize = True
+        self._all_solutions: list[dict[str, int]] = []
 
     # ========== Variable callbacks ==========
 
@@ -894,16 +895,22 @@ class CPOCallbacks(BaseCallbacks):
             params['TimeLimit'] = self.time_limit
 
         if self.sols is not None:
-            if self.sols == "all":
-                params['SolutionLimit'] = 0  # All solutions
-            elif isinstance(self.sols, int):
+            if self.sols != "all" and isinstance(self.sols, int):
                 params['SolutionLimit'] = self.sols
+        elif self._objective_expr is None:
+            # Ensure at least one solution is searched (avoid SolutionLimit=0 defaults)
+            params.setdefault('SolutionLimit', 1)
         if self.verbose <= 0:
             params['LogVerbosity'] = "Quiet"
             params['log_output'] = None
 
         try:
+            if self.sols is not None and self._objective_expr is None:
+                limit = None if self.sols == "all" else int(self.sols)
+                return self._solve_all_solutions(params, limit)
+
             # Solve
+            self._all_solutions = []
             self.solution = self.model.solve(**params)
 
             if self.solution is None:
@@ -916,6 +923,9 @@ class CPOCallbacks(BaseCallbacks):
             # Map CPO status to TypeStatus
             if solve_status == "Optimal":
                 self._objective_value = self.solution.get_objective_value()
+                if self._objective_expr is None:
+                    self._status = TypeStatus.SAT
+                    return TypeStatus.SAT
                 self._status = TypeStatus.OPTIMUM
                 return TypeStatus.OPTIMUM
             elif solve_status == "Feasible":
@@ -932,6 +942,40 @@ class CPOCallbacks(BaseCallbacks):
         except Exception as e:
             self._log(1, f"Solver error: {e}")
             raise
+
+    def _solve_all_solutions(self, params: dict, limit: int | None) -> TypeStatus:
+        """Enumerate all/multiple solutions for satisfaction problems."""
+        self._all_solutions = []
+
+        search = self.model.start_search(**params)
+        last_solution = None
+        try:
+            for sol in search:
+                last_solution = sol
+                sol_dict = {}
+                for var_id, cpo_var in self.vars.items():
+                    sol_val = sol.get_value(cpo_var)
+                    if sol_val is not None:
+                        if hasattr(self, '_symbolic_maps') and var_id in self._symbolic_maps:
+                            sol_dict[var_id] = self._symbolic_maps[var_id][sol_val]
+                        else:
+                            sol_dict[var_id] = int(sol_val)
+                if sol_dict:
+                    self._all_solutions.append(sol_dict)
+                if limit is not None and len(self._all_solutions) >= limit:
+                    break
+        finally:
+            search.end()
+
+        if self._all_solutions:
+            self.solution = last_solution
+            self._status = TypeStatus.SAT
+            self._log(1, f"Solver finished: SAT ({len(self._all_solutions)} solutions)")
+            return TypeStatus.SAT
+
+        self._status = TypeStatus.UNSAT
+        self._log(1, "Solver finished: UNSAT")
+        return TypeStatus.UNSAT
 
     def get_solution(self) -> dict[str, int] | None:
         """Get solution values as dict."""
@@ -952,3 +996,7 @@ class CPOCallbacks(BaseCallbacks):
                 pass
 
         return result
+
+    def get_all_solutions(self) -> list[dict[str, int]]:
+        """Return all solutions found."""
+        return self._all_solutions

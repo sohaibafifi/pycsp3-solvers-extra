@@ -1163,9 +1163,13 @@ class ORToolsCallbacks(BaseCallbacks):
 
         # Handle multi-solution
         if self.sols == "all" or (isinstance(self.sols, int) and self.sols > 1):
-            return self._solve_all_solutions()
+            if self.model.HasObjective():
+                self._log(1, "OR-Tools cannot enumerate all solutions with objectives; solving once.")
+            else:
+                return self._solve_all_solutions()
 
         # Single solution
+        self._all_solutions = []
         self._objective_value = None
         self._log(1, "Starting OR-Tools solver...")
         status = self.solver.Solve(self.model)
@@ -1173,7 +1177,10 @@ class ORToolsCallbacks(BaseCallbacks):
         if status == cp_model.OPTIMAL:
             self._extract_solution()
             self._set_objective_value()
-            self._status = TypeStatus.OPTIMUM
+            if self.model.HasObjective():
+                self._status = TypeStatus.OPTIMUM
+            else:
+                self._status = TypeStatus.SAT
         elif status == cp_model.FEASIBLE:
             self._extract_solution()
             self._set_objective_value()
@@ -1189,6 +1196,8 @@ class ORToolsCallbacks(BaseCallbacks):
     def _solve_all_solutions(self) -> TypeStatus:
         """Solve and enumerate all/multiple solutions."""
         self._objective_value = None
+        self._all_solutions = []
+        self.solver.parameters.enumerate_all_solutions = True
         class SolutionCollector(cp_model.CpSolverSolutionCallback):
             def __init__(self, variables, limit, verbose):
                 super().__init__()
@@ -1213,7 +1222,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
         if len(collector.solutions) > 0:
             self._all_solutions = collector.solutions
-            self._solution = collector.solutions[0]
+            self._solution = collector.solutions[-1]
             self._set_objective_value()
             self._status = TypeStatus.SAT
         elif status == cp_model.INFEASIBLE:
