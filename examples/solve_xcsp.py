@@ -10,11 +10,17 @@ def main() -> None:
     parser.add_argument("--solver", default="ortools", help="Solver backend (default: ortools)")
     parser.add_argument("--verbose", type=int, default=0, help="Verbosity level")
     parser.add_argument("--time-limit", type=float, default=None, help="Time limit in seconds")
+    parser.add_argument("--options", default="", help="Solver-specific options (e.g. '-positive=CT2')")
     args = parser.parse_args()
 
     clear()
     load(args.filepath)
-    status = solve(solver=args.solver, verbose=args.verbose, time_limit=args.time_limit)
+    status = solve(
+        solver=args.solver,
+        verbose=args.verbose,
+        time_limit=args.time_limit,
+        options=args.options,
+    )
     print(status)
     print(bound())
 
