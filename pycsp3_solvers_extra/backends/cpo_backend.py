@@ -18,7 +18,7 @@ from pycsp3.classes.nodes import Node
 
 from pycsp3_solvers_extra.backends.base import BaseCallbacks
 
-from pycsp3.classes.main.variables import Variable, VariableInteger, Domain
+from pycsp3.classes.main.variables import Variable
 from pycsp3.classes.nodes import TypeNode
 
 # Try to import docplex
@@ -167,72 +167,6 @@ class CPOCallbacks(BaseCallbacks):
     def new_aux_int_var(self, lb: int, ub: int, name_hint: str = "aux") -> Any:
         """Create an auxiliary integer variable."""
         return self.model.integer_var(lb, ub, name_hint)
-
-    def decompose_call(self, call, ctx):
-        if call.name == "ctr_among":
-            lst, values, k = call.args
-            condition = Condition.build_condition((TypeConditionOperator.EQ, k))
-            from pycsp3_solvers_extra.transforms.types import ConstraintCall
-
-            return [ConstraintCall("ctr_count", (lst, values, condition), {})]
-        if call.name == "ctr_cardinality":
-            lst, values, occurs, closed = call.args
-            from pycsp3_solvers_extra.transforms.types import ConstraintCall
-
-            def _occ_condition(occ):
-                if isinstance(occ, range):
-                    return Condition.build_condition((TypeConditionOperator.IN, occ))
-                if isinstance(occ, (list, tuple, set, frozenset)):
-                    return Condition.build_condition((TypeConditionOperator.IN, list(occ)))
-                if isinstance(occ, str) and ".." in occ:
-                    parts = occ.split("..", 1)
-                    if len(parts) == 2 and parts[0].lstrip("-").isdigit() and parts[1].lstrip("-").isdigit():
-                        start = int(parts[0])
-                        end = int(parts[1])
-                        if start <= end:
-                            return Condition.build_condition((TypeConditionOperator.IN, range(start, end + 1)))
-                return Condition.build_condition((TypeConditionOperator.EQ, occ))
-
-            calls = [
-                ConstraintCall("ctr_count", (lst, [value], _occ_condition(occ)), {})
-                for value, occ in zip(values, occurs)
-            ]
-            if closed:
-                in_values = Condition.build_condition((TypeConditionOperator.EQ, 1))
-                for var in lst:
-                    calls.append(ConstraintCall("ctr_count", ([var], values, in_values), {}))
-            return calls
-        if call.name == "ctr_element_matrix":
-            matrix, row_index, col_index, condition = call.args
-            from pycsp3_solvers_extra.transforms.types import ConstraintCall
-
-            if not matrix or not matrix[0]:
-                raise ValueError("Element matrix must be non-empty")
-            cols = len(matrix[0])
-            if any(len(row) != cols for row in matrix):
-                raise ValueError("Element matrix must be rectangular for decomposition")
-
-            flat = [cell for row in matrix for cell in row]
-            max_index = len(flat) - 1
-            counter = getattr(self, "_aux_counter", 0)
-            while True:
-                aux_id = f"__aux_idx_{counter}"
-                counter += 1
-                if aux_id not in self.vars:
-                    break
-            self._aux_counter = counter
-            aux_var = VariableInteger(aux_id, Domain(range(max_index + 1)))
-            self.vars[aux_id] = self.new_aux_int_var(0, max_index, aux_id)
-
-            expr = Node.build(TypeNode.ADD, Node.build(TypeNode.MUL, row_index, cols), col_index)
-            tree = Node.build(TypeNode.EQ, aux_var, expr)
-            scope = list(tree.scope())
-
-            return [
-                ConstraintCall("ctr_intension", (scope, tree), {}),
-                ConstraintCall("ctr_element", (flat, aux_var, condition), {}),
-            ]
-        return None
 
     def var_integer(self, x: Variable, values: list[int]):
         """Create integer variable with explicit domain."""

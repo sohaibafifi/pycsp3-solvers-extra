@@ -8,4 +8,10 @@ def rewrite_calls(
     calls: list[ConstraintCall], ctx: TransformContext
 ) -> list[ConstraintCall]:
     _ = ctx
-    return calls
+    output: list[ConstraintCall] = []
+    for call in calls:
+        if call.name == "ctr_lex_matrix":
+            output.append(ConstraintCall("ctr_lex", call.args, call.kwargs))
+        else:
+            output.append(call)
+    return output
