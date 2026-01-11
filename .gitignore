@@ -96,3 +96,6 @@ dmypy.json
 .DS_Store
 Thumbs.db
 libs
+
+
+examples/XCSP2*
