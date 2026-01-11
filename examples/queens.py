@@ -1,7 +1,7 @@
 """
 N-Queens Problem - Solver Comparison
 
-The N-Queens problem asks to place n queens on an n×n chessboard
+The N-Queens problem asks to place n queens on an nxn chessboard
 so that no two queens attack each other.
 """
 
@@ -32,7 +32,7 @@ def main():
     parser = argparse.ArgumentParser(description="N-Queens Solver Comparison")
     parser.add_argument("-n", type=int, default=8, help="Board size (default: 8)")
     parser.add_argument("-v", "--verbose", type=int, default=0, help="Verbosity level")
-    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo"],
+    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo", "z3"],
                         help="Solvers to compare")
     args = parser.parse_args()
 

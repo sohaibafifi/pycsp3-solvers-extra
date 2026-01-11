@@ -36,7 +36,7 @@ def main():
     parser = argparse.ArgumentParser(description="Magic Sequence Solver Comparison")
     parser.add_argument("-n", type=int, default=10, help="Sequence length (default: 10)")
     parser.add_argument("-v", "--verbose", type=int, default=0, help="Verbosity level")
-    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo"],
+    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo", "z3"],
                         help="Solvers to compare")
     args = parser.parse_args()
 

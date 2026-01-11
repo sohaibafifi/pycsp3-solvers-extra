@@ -52,7 +52,7 @@ def main():
     parser.add_argument("-t", "--time-limit", type=float, default=60,
                         help="Time limit in seconds (default: 60)")
     parser.add_argument("-v", "--verbose", type=int, default=0, help="Verbosity level")
-    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo"],
+    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo", "z3"],
                         help="Solvers to compare")
     args = parser.parse_args()
 

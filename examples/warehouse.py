@@ -37,9 +37,14 @@ for solver in supported_solvers():
         Sum(costs[i][w[i]] for i in range(nStores)) + NValues(w) * fixed_cost
     )
 
-    if solve(solver=solver) in [SAT, OPTIMUM]:
-        print(values(w))
-        for i in range(nStores):
-            print(f"Cost of supplying the store {i} is {costs[i][value(w[i])]}")
-        print("Total supplying cost: ", bound())
-    clear()
+    try:
+        status = solve(solver=solver)
+        if status in [SAT, OPTIMUM]:
+            print(values(w))
+            for i in range(nStores):
+                print(f"Cost of supplying the store {i} is {costs[i][value(w[i])]}")
+            print("Total supplying cost: ", bound())
+    except Exception as exc:
+        print(f"Solver failed: {exc}")
+    finally:
+        clear()
