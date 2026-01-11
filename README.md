@@ -91,18 +91,6 @@ solve(
 
 Returns `TypeStatus.SAT`, `TypeStatus.OPTIMUM`, `TypeStatus.UNSAT`, or `TypeStatus.UNKNOWN`.
 
-## Solver Comparison
-
-| Feature | OR-Tools | Z3 | CPO |
-|---------|----------|-----|-----|
-| Type | CP-SAT | SMT | CP |
-| Optimization | Yes | Yes | Yes |
-| AllDifferent | Native | Native (Distinct) | Native |
-| Table constraints | Native | SAT encoding | Native |
-| Scheduling | Native | Encoded | Native |
-| License | Apache 2.0 | MIT | Commercial |
-
-See [supported.md](supported.md) for detailed constraint support matrix.
 
 ## Examples
 
