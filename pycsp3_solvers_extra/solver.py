@@ -187,7 +187,7 @@ def _solve_extra(
         callbacker.load_instance()
 
         if verbose > 0:
-            print(f"Solving with {solver}...")
+            print(f"Now the file is parsed, starting solving with {solver}...")
 
         # Solve and get status
         status = callbacks.solve()

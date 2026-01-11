@@ -194,37 +194,38 @@ class Z3Callbacks(BaseCallbacks):
         if len(args) == 0:
             return True
         if len(args) == 1:
-            return args[0]
-        return And(*args)
+            return self._as_bool_expr(args[0])
+        return And(*[self._as_bool_expr(a) for a in args])
 
     def _or(self, args: list[Any]) -> Any:
         if len(args) == 0:
             return False
         if len(args) == 1:
-            return args[0]
-        return Or(*args)
+            return self._as_bool_expr(args[0])
+        return Or(*[self._as_bool_expr(a) for a in args])
 
     def _not(self, a: Any) -> Any:
-        return Not(a)
+        return Not(self._as_bool_expr(a))
 
     def _xor(self, args: list[Any]) -> Any:
         if len(args) == 0:
             return False
         if len(args) == 1:
-            return args[0]
+            return self._as_bool_expr(args[0])
+        args = [self._as_bool_expr(a) for a in args]
         if len(args) == 2:
             return Xor(args[0], args[1])
         # Chain XOR for multiple args
         return reduce(lambda a, b: Xor(a, b), args)
 
     def _iff(self, a: Any, b: Any) -> Any:
-        return a == b
+        return self._as_bool_expr(a) == self._as_bool_expr(b)
 
     def _imp(self, a: Any, b: Any) -> Any:
-        return Implies(a, b)
+        return Implies(self._as_bool_expr(a), self._as_bool_expr(b))
 
     def _if_then_else(self, cond: Any, then_val: Any, else_val: Any) -> Any:
-        return If(cond, then_val, else_val)
+        return If(self._as_bool_expr(cond), then_val, else_val)
 
     def _in_set(self, val: Any, set_vals: list[Any]) -> Any:
         if not set_vals:
@@ -237,6 +238,14 @@ class Z3Callbacks(BaseCallbacks):
         return And([val != v for v in set_vals])
 
     # ========== Helper methods ==========
+
+    def _as_bool_expr(self, expr: Any) -> Any:
+        """Coerce arithmetic expressions to boolean expressions."""
+        if isinstance(expr, bool) or is_bool(expr):
+            return expr
+        if is_int(expr) or isinstance(expr, (ArithRef, int)):
+            return expr != 0
+        return expr
 
     def _add_constraint(self, constraint: BoolRef) -> None:
         """Add a constraint to the model."""
