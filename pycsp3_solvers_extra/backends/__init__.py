@@ -52,11 +52,18 @@ def _try_load_backend(name: str) -> None:
         except ImportError:
             _BACKENDS["cpo"] = None
 
+    elif name == "z3":
+        try:
+            from pycsp3_solvers_extra.backends.z3_backend import Z3Callbacks
+            _BACKENDS["z3"] = Z3Callbacks
+        except ImportError:
+            _BACKENDS["z3"] = None
+
 
 def available_backends() -> list[str]:
     """Return list of available backend names."""
     # Try loading all known backends
-    for name in ["ortools", "cpo"]:
+    for name in ["ortools", "cpo", "z3"]:
         if name not in _BACKENDS:
             _try_load_backend(name)
 

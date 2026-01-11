@@ -20,7 +20,6 @@ from pycsp3.classes.main.constraints import (
 from pycsp3.classes.main.variables import Variable
 from pycsp3.parser.constants import STATIC
 from pycsp3.parser.xentries import XBlock, XCtr, XGroup, XObjExpr, XSlide, XVar, XVarArray
-from pycsp3.parser.xparser import ParserXCSP3
 from pycsp3.tools.curser import ListVar, OpOverrider
 from pycsp3.tools.utilities import matrix_to_string, table_to_string
 
@@ -52,7 +51,8 @@ def _to_list_var(tree):
     return ListVar(_to_list_var(item) for item in tree)
 
 
-def _parse_xcsp3_file(path: Path) -> ParserXCSP3:
+def _parse_xcsp3_file(path: Path):
+    from pycsp3.parser.xparser import ParserXCSP3
     suffixes = path.suffixes
     if not suffixes or suffixes[-1] not in {".xml", ".lzma"}:
         raise ValueError("Expected an .xml or .xml.lzma file")

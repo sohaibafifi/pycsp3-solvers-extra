@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 NATIVE_SOLVERS = {"ace", "choco"}
 
 # Solvers implemented by this package
-EXTRA_SOLVERS = {"ortools", "cpo"}
+EXTRA_SOLVERS = {"ortools", "cpo", "z3"}
 
 
 def supported_solvers() -> list[str]:
