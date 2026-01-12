@@ -437,16 +437,59 @@ class CPOCallbacks(BaseCallbacks):
     def ctr_all_different(self, scope: list[Variable] | list[Node], excepting: None | list[int]):
         """AllDifferent constraint."""
         exprs = self._get_var_or_node_list(scope)
+        n = len(exprs)
+
         if excepting is None or len(excepting) == 0:
             self.model.add(modeler.all_diff(exprs))
-        else:
-            # AllDifferent except values - pairwise constraints
-            for i in range(len(exprs)):
-                for j in range(i + 1, len(exprs)):
-                    xi_except = modeler.logical_or([exprs[i] == v for v in excepting])
-                    xj_except = modeler.logical_or([exprs[j] == v for v in excepting])
-                    self.model.add(modeler.logical_or(exprs[i] != exprs[j], xi_except, xj_except))
-        self._log(2, f"Added AllDifferent on {len(scope)} vars")
+            self._log(2, f"Added AllDifferent on {n} vars")
+            return
+
+        excepting_set = set(excepting)
+
+        # Partition: find which expressions can take excepted values
+        can_be_excepted: list[int] = []
+        cannot_be_excepted: list[int] = []
+
+        for i, item in enumerate(scope):
+            if isinstance(item, Variable):
+                dom_vals = item.dom.all_values()
+                if isinstance(dom_vals, range):
+                    has_excepted = any(v in dom_vals for v in excepting_set)
+                else:
+                    has_excepted = bool(set(dom_vals) & excepting_set)
+            elif isinstance(item, Node):
+                poss = item.possible_values()
+                if isinstance(poss, range):
+                    has_excepted = any(v in poss for v in excepting_set)
+                else:
+                    has_excepted = bool(set(poss) & excepting_set) if poss else False
+            else:
+                has_excepted = True
+
+            if has_excepted:
+                can_be_excepted.append(i)
+            else:
+                cannot_be_excepted.append(i)
+
+        # Variables that cannot take excepted values - use native all_diff
+        if len(cannot_be_excepted) >= 2:
+            self.model.add(modeler.all_diff([exprs[i] for i in cannot_be_excepted]))
+
+        # Variables that cannot be excepted must differ from those that can
+        for i in cannot_be_excepted:
+            for j in can_be_excepted:
+                self.model.add(exprs[i] != exprs[j])
+
+        # Among variables that can be excepted, use pairwise conditional constraints
+        for idx_a in range(len(can_be_excepted)):
+            for idx_b in range(idx_a + 1, len(can_be_excepted)):
+                i, j = can_be_excepted[idx_a], can_be_excepted[idx_b]
+                xi_except = modeler.logical_or([exprs[i] == v for v in excepting])
+                xj_except = modeler.logical_or([exprs[j] == v for v in excepting])
+                self.model.add(modeler.logical_or(exprs[i] != exprs[j], xi_except, xj_except))
+
+        self._log(2, f"Added AllDifferent on {n} vars except {excepting} "
+                     f"({len(cannot_be_excepted)} global, {len(can_be_excepted)} conditional)")
 
     def ctr_all_equal(self, scope: list[Variable] | list[Node], excepting: None | list[int]):
         """AllEqual constraint."""
@@ -497,11 +540,7 @@ class CPOCallbacks(BaseCallbacks):
         self._log(2, f"Added Count constraint")
 
     def ctr_nvalues(self, lst: list[Variable] | list[Node], excepting: None | list[int], condition: Condition):
-        """NValues constraint: number of distinct values.
-
-        Optimized encoding that only checks values that are actually in at least
-        one expression's domain.
-        """
+        """NValues constraint: number of distinct values."""
         exprs = self._get_var_or_node_list(lst)
         n = len(exprs)
 

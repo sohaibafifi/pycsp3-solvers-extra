@@ -577,26 +577,72 @@ class ORToolsCallbacks(BaseCallbacks):
     def ctr_all_different(self, scope: list[Variable] | list[Node], excepting: None | list[int]):
         """AllDifferent constraint."""
         exprs = self._get_var_or_node_list(scope)
+        n = len(exprs)
 
         if excepting is None or len(excepting) == 0:
             self.model.AddAllDifferent(exprs)
-        else:
-            # AllDifferent except values - use pairwise constraints
-            for i in range(len(exprs)):
-                for j in range(i + 1, len(exprs)):
-                    # xi != xj OR xi in excepting OR xj in excepting
-                    not_equal = self.model.NewBoolVar("")
-                    self.model.Add(exprs[i] != exprs[j]).OnlyEnforceIf(not_equal)
+            self._log(2, f"Added AllDifferent on {n} vars")
+            return
 
-                    xi_excepted = self.model.NewBoolVar("")
-                    self.model.AddAllowedAssignments([exprs[i]], [[v] for v in excepting]).OnlyEnforceIf(xi_excepted)
+        excepting_set = set(excepting)
 
-                    xj_excepted = self.model.NewBoolVar("")
-                    self.model.AddAllowedAssignments([exprs[j]], [[v] for v in excepting]).OnlyEnforceIf(xj_excepted)
+        # Partition: find which expressions can take excepted values
+        # We need domain info from original scope items
+        can_be_excepted: list[int] = []  # indices of exprs that can take excepted values
+        cannot_be_excepted: list[int] = []  # indices of exprs that cannot
 
-                    self.model.AddBoolOr([not_equal, xi_excepted, xj_excepted])
+        for i, item in enumerate(scope):
+            if isinstance(item, Variable):
+                dom_vals = item.dom.all_values()
+                if isinstance(dom_vals, range):
+                    # Check if range overlaps with excepting values
+                    has_excepted = any(v in dom_vals for v in excepting_set)
+                else:
+                    has_excepted = bool(set(dom_vals) & excepting_set)
+            elif isinstance(item, Node):
+                poss = item.possible_values()
+                if isinstance(poss, range):
+                    has_excepted = any(v in poss for v in excepting_set)
+                else:
+                    has_excepted = bool(set(poss) & excepting_set) if poss else False
+            else:
+                # Constant or unknown - assume can be excepted
+                has_excepted = True
 
-        self._log(2, f"Added AllDifferent on {len(scope)} vars" + (f" except {excepting}" if excepting else ""))
+            if has_excepted:
+                can_be_excepted.append(i)
+            else:
+                cannot_be_excepted.append(i)
+
+        # Variables that cannot take excepted values must all be different (global constraint)
+        if len(cannot_be_excepted) >= 2:
+            self.model.AddAllDifferent([exprs[i] for i in cannot_be_excepted])
+
+        # Variables that cannot be excepted must also differ from those that can
+        # (since they can never share an excepted value)
+        for i in cannot_be_excepted:
+            for j in can_be_excepted:
+                self.model.Add(exprs[i] != exprs[j])
+
+        # Among variables that can be excepted, use pairwise conditional constraints
+        # This is O(k²) where k = |can_be_excepted|, typically much smaller than n
+        for idx_a in range(len(can_be_excepted)):
+            for idx_b in range(idx_a + 1, len(can_be_excepted)):
+                i, j = can_be_excepted[idx_a], can_be_excepted[idx_b]
+                # xi != xj OR xi in excepting OR xj in excepting
+                not_equal = self.model.NewBoolVar("")
+                self.model.Add(exprs[i] != exprs[j]).OnlyEnforceIf(not_equal)
+
+                xi_excepted = self.model.NewBoolVar("")
+                self.model.AddAllowedAssignments([exprs[i]], [[v] for v in excepting]).OnlyEnforceIf(xi_excepted)
+
+                xj_excepted = self.model.NewBoolVar("")
+                self.model.AddAllowedAssignments([exprs[j]], [[v] for v in excepting]).OnlyEnforceIf(xj_excepted)
+
+                self.model.AddBoolOr([not_equal, xi_excepted, xj_excepted])
+
+        self._log(2, f"Added AllDifferent on {n} vars except {excepting} "
+                     f"({len(cannot_be_excepted)} global, {len(can_be_excepted)} conditional)")
 
     def ctr_all_different_lists(self, lists: list[list[Variable]], excepting: None | list[list[int]]):
         """AllDifferent on lists (each list differs from others)."""
@@ -768,12 +814,7 @@ class ORToolsCallbacks(BaseCallbacks):
         self._log(2, f"Added Exactly constraint: exactly {k} of value {value}")
 
     def ctr_nvalues(self, lst: list[Variable] | list[Node], excepting: None | list[int], condition: Condition):
-        """NValues constraint: number of distinct values.
-
-        Optimized encoding that only creates indicator variables for (value, expr)
-        pairs where the value is actually in the expression's domain, reducing
-        from O(d*n) to O(sum of domain sizes) indicators.
-        """
+        """NValues constraint: number of distinct values."""
         exprs = self._get_var_or_node_list(lst)
         n = len(exprs)
 

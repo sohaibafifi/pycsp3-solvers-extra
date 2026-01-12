@@ -375,25 +375,64 @@ class Z3Callbacks(BaseCallbacks):
     ):
         """AllDifferent constraint."""
         exprs = self._get_var_or_node_list(scope)
+        n = len(exprs)
 
         if excepting is None or len(excepting) == 0:
             # Z3's native Distinct is very efficient
             self._add_constraint(Distinct(*exprs))
-        else:
-            # AllDifferent except values - use pairwise constraints
-            for i in range(len(exprs)):
-                for j in range(i + 1, len(exprs)):
-                    # xi != xj OR xi in excepting OR xj in excepting
-                    xi_excepted = Or([exprs[i] == v for v in excepting])
-                    xj_excepted = Or([exprs[j] == v for v in excepting])
-                    self._add_constraint(
-                        Or(exprs[i] != exprs[j], xi_excepted, xj_excepted)
-                    )
+            self._log(2, f"Added AllDifferent on {n} vars")
+            return
+
+        excepting_set = set(excepting)
+
+        # Partition: find which expressions can take excepted values
+        can_be_excepted: list[int] = []
+        cannot_be_excepted: list[int] = []
+
+        for i, item in enumerate(scope):
+            if isinstance(item, Variable):
+                dom_vals = item.dom.all_values()
+                if isinstance(dom_vals, range):
+                    has_excepted = any(v in dom_vals for v in excepting_set)
+                else:
+                    has_excepted = bool(set(dom_vals) & excepting_set)
+            elif isinstance(item, Node):
+                poss = item.possible_values()
+                if isinstance(poss, range):
+                    has_excepted = any(v in poss for v in excepting_set)
+                else:
+                    has_excepted = bool(set(poss) & excepting_set) if poss else False
+            else:
+                has_excepted = True
+
+            if has_excepted:
+                can_be_excepted.append(i)
+            else:
+                cannot_be_excepted.append(i)
+
+        # Variables that cannot take excepted values - use native Distinct
+        if len(cannot_be_excepted) >= 2:
+            self._add_constraint(Distinct(*[exprs[i] for i in cannot_be_excepted]))
+
+        # Variables that cannot be excepted must differ from those that can
+        for i in cannot_be_excepted:
+            for j in can_be_excepted:
+                self._add_constraint(exprs[i] != exprs[j])
+
+        # Among variables that can be excepted, use pairwise conditional constraints
+        for idx_a in range(len(can_be_excepted)):
+            for idx_b in range(idx_a + 1, len(can_be_excepted)):
+                i, j = can_be_excepted[idx_a], can_be_excepted[idx_b]
+                xi_excepted = Or([exprs[i] == v for v in excepting])
+                xj_excepted = Or([exprs[j] == v for v in excepting])
+                self._add_constraint(
+                    Or(exprs[i] != exprs[j], xi_excepted, xj_excepted)
+                )
 
         self._log(
             2,
-            f"Added AllDifferent on {len(scope)} vars"
-            + (f" except {excepting}" if excepting else ""),
+            f"Added AllDifferent on {n} vars except {excepting} "
+            f"({len(cannot_be_excepted)} global, {len(can_be_excepted)} conditional)",
         )
 
     def ctr_all_different_lists(
@@ -526,11 +565,7 @@ class Z3Callbacks(BaseCallbacks):
         excepting: None | list[int],
         condition: Condition,
     ):
-        """NValues constraint: number of distinct values.
-
-        Optimized encoding that only creates If() expressions for (value, expr)
-        pairs where the value is actually in the expression's domain.
-        """
+        """NValues constraint: number of distinct values."""
         exprs = self._get_var_or_node_list(lst)
         n = len(exprs)
 
