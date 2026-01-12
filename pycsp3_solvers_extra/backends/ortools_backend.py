@@ -768,46 +768,100 @@ class ORToolsCallbacks(BaseCallbacks):
         self._log(2, f"Added Exactly constraint: exactly {k} of value {value}")
 
     def ctr_nvalues(self, lst: list[Variable] | list[Node], excepting: None | list[int], condition: Condition):
-        """NValues constraint: number of distinct values."""
-        # This is complex - we need to count distinct values
-        # For now, use a simple encoding
-        exprs = self._get_var_or_node_list(lst)
+        """NValues constraint: number of distinct values.
 
-        # Get all possible values from pycsp3 objects
+        Optimized encoding that only creates indicator variables for (value, expr)
+        pairs where the value is actually in the expression's domain, reducing
+        from O(d*n) to O(sum of domain sizes) indicators.
+        """
+        exprs = self._get_var_or_node_list(lst)
+        n = len(exprs)
+
+        # Build domain info for each expression
+        # domains[i] = set of values that exprs[i] can take
+        domains: list[set[int]] = []
         all_values: set[int] = set()
+
         for item in lst:
             if isinstance(item, Variable):
                 vals = item.dom.all_values()
             elif isinstance(item, Node):
                 vals = item.possible_values()
             else:
-                continue
+                vals = []
+
             if isinstance(vals, range):
-                all_values.update(vals)
+                item_vals = set(vals)
             else:
-                all_values.update(vals)
+                item_vals = set(vals) if vals else set()
+
+            domains.append(item_vals)
+            all_values.update(item_vals)
 
         if excepting:
             all_values -= set(excepting)
 
-        # For each value, create boolean indicating if it appears
+        # Early exit for trivial cases
+        if not all_values:
+            self._apply_condition_to_model(0, condition)
+            self._log(2, "Added NValues constraint (trivial: no values)")
+            return
+
+        if not exprs:
+            self._apply_condition_to_model(0, condition)
+            self._log(2, "Added NValues constraint (trivial: no expressions)")
+            return
+
+        # Count total indicators for logging
+        total_indicators = sum(1 for val in all_values for i in range(n) if val in domains[i])
+        if total_indicators > 10000:
+            self._log(1, f"NValues: {len(all_values)} values, {n} vars, {total_indicators} indicators")
+
+        # For each value, track if it appears in at least one expression
         appears = []
-        for val in all_values:
+        for val in sorted(all_values):
+            # Find which expressions can take this value
+            relevant_indices = [i for i in range(n) if val in domains[i]]
+
+            if not relevant_indices:
+                # No expression can take this value - skip it entirely
+                # (shouldn't happen since all_values comes from domains, but be safe)
+                continue
+
             appears_var = self.model.NewBoolVar("")
-            # val appears if any expr == val
-            eq_vars = []
-            for e in exprs:
-                eq_var = self.model.NewBoolVar("")
-                self.model.Add(e == val).OnlyEnforceIf(eq_var)
-                self.model.Add(e != val).OnlyEnforceIf(eq_var.Not())
-                eq_vars.append(eq_var)
-            self.model.AddBoolOr(eq_vars).OnlyEnforceIf(appears_var)
-            self.model.AddBoolAnd([v.Not() for v in eq_vars]).OnlyEnforceIf(appears_var.Not())
+
+            if len(relevant_indices) == 1:
+                # Only one expression can take this value - direct reification
+                e = exprs[relevant_indices[0]]
+                self.model.Add(e == val).OnlyEnforceIf(appears_var)
+                self.model.Add(e != val).OnlyEnforceIf(appears_var.Not())
+            else:
+                # Multiple expressions can take this value
+                # Create indicator for each relevant expression
+                indicators = []
+                for i in relevant_indices:
+                    ind = self.model.NewBoolVar("")
+                    self.model.Add(exprs[i] == val).OnlyEnforceIf(ind)
+                    self.model.Add(exprs[i] != val).OnlyEnforceIf(ind.Not())
+                    indicators.append(ind)
+
+                # appears_var <=> OR(indicators)
+                # Forward: appears_var => OR(indicators)
+                self.model.AddBoolOr(indicators).OnlyEnforceIf(appears_var)
+                # Backward: OR(indicators) => appears_var
+                # Equivalent: NOT(appears_var) => AND(NOT(indicators))
+                self.model.AddBoolAnd([ind.Not() for ind in indicators]).OnlyEnforceIf(appears_var.Not())
+
             appears.append(appears_var)
 
-        nvalues = self._linear_sum(appears)
-        self._apply_condition_to_model(nvalues, condition)
-        self._log(2, f"Added NValues constraint")
+        # nvalues = count of values that appear
+        if not appears:
+            self._apply_condition_to_model(0, condition)
+        else:
+            nvalues = self._linear_sum(appears)
+            self._apply_condition_to_model(nvalues, condition)
+
+        self._log(2, f"Added NValues constraint ({len(appears)} value indicators)")
 
     def ctr_element(self, lst: list[Variable] | list[int], i: Variable, condition: Condition):
         """Element constraint: lst[i] satisfies condition."""

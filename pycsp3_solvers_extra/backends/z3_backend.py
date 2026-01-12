@@ -526,36 +526,69 @@ class Z3Callbacks(BaseCallbacks):
         excepting: None | list[int],
         condition: Condition,
     ):
-        """NValues constraint: number of distinct values."""
-        exprs = self._get_var_or_node_list(lst)
+        """NValues constraint: number of distinct values.
 
-        # Get all possible values from pycsp3 objects
+        Optimized encoding that only creates If() expressions for (value, expr)
+        pairs where the value is actually in the expression's domain.
+        """
+        exprs = self._get_var_or_node_list(lst)
+        n = len(exprs)
+
+        # Build domain info for each expression
+        domains: list[set[int]] = []
         all_values: set[int] = set()
+
         for item in lst:
             if isinstance(item, Variable):
                 vals = item.dom.all_values()
             elif isinstance(item, Node):
                 vals = item.possible_values()
             else:
-                continue
+                vals = []
+
             if isinstance(vals, range):
-                all_values.update(vals)
+                item_vals = set(vals)
             else:
-                all_values.update(vals)
+                item_vals = set(vals) if vals else set()
+
+            domains.append(item_vals)
+            all_values.update(item_vals)
 
         if excepting:
             all_values -= set(excepting)
 
-        # For each value, create boolean indicating if it appears
-        appears = []
-        for val in all_values:
-            # value appears if any expr == val
-            eq_terms = [If(e == val, 1, 0) for e in exprs]
-            appears.append(If(Sum(eq_terms) > 0, 1, 0))
+        # Early exit for trivial cases
+        if not all_values or not exprs:
+            self._apply_condition_to_model(Int(0), condition)
+            self._log(2, "Added NValues constraint (trivial)")
+            return
 
-        nvalues = Sum(appears)
-        self._apply_condition_to_model(nvalues, condition)
-        self._log(2, f"Added NValues constraint")
+        # For each value, create indicator for whether it appears
+        appears = []
+        for val in sorted(all_values):
+            # Only consider expressions that can take this value
+            relevant_indices = [i for i in range(n) if val in domains[i]]
+
+            if not relevant_indices:
+                # No expression can take this value - skip
+                continue
+
+            if len(relevant_indices) == 1:
+                # Only one expression can take this value - direct check
+                e = exprs[relevant_indices[0]]
+                appears.append(If(e == val, 1, 0))
+            else:
+                # Multiple expressions - check if any equals val
+                eq_terms = [If(exprs[i] == val, 1, 0) for i in relevant_indices]
+                appears.append(If(Sum(eq_terms) > 0, 1, 0))
+
+        if not appears:
+            self._apply_condition_to_model(Int(0), condition)
+        else:
+            nvalues = Sum(appears)
+            self._apply_condition_to_model(nvalues, condition)
+
+        self._log(2, f"Added NValues constraint ({len(appears)} values)")
 
     def ctr_element(
         self, lst: list[Variable] | list[int], i: Variable, condition: Condition

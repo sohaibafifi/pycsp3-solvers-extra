@@ -497,29 +497,65 @@ class CPOCallbacks(BaseCallbacks):
         self._log(2, f"Added Count constraint")
 
     def ctr_nvalues(self, lst: list[Variable] | list[Node], excepting: None | list[int], condition: Condition):
-        """NValues constraint: number of distinct values."""
-        exprs = self._get_var_or_node_list(lst)
+        """NValues constraint: number of distinct values.
 
-        all_values = set()
+        Optimized encoding that only checks values that are actually in at least
+        one expression's domain.
+        """
+        exprs = self._get_var_or_node_list(lst)
+        n = len(exprs)
+
+        # Build domain info for each expression
+        domains: list[set[int]] = []
+        all_values: set[int] = set()
+
         for item in lst:
             if isinstance(item, Variable):
                 vals = item.dom.all_values()
             elif isinstance(item, Node):
                 vals = item.possible_values()
             else:
-                vals = [item]
+                vals = [item] if isinstance(item, int) else []
+
             if isinstance(vals, range):
-                all_values.update(vals)
+                item_vals = set(vals)
             else:
-                all_values.update(vals)
+                item_vals = set(vals) if vals else set()
+
+            domains.append(item_vals)
+            all_values.update(item_vals)
 
         if excepting:
             all_values.difference_update(excepting)
 
-        present = [modeler.count(exprs, val) >= 1 for val in sorted(all_values)]
+        # Early exit for trivial cases
+        if not all_values or not exprs:
+            self._apply_condition(0, condition)
+            self._log(2, "Added NValues constraint (trivial)")
+            return
+
+        # For each value, check if it appears
+        # Only consider values that are in at least one expression's domain
+        present = []
+        for val in sorted(all_values):
+            # Find which expressions can take this value
+            relevant_indices = [i for i in range(n) if val in domains[i]]
+
+            if not relevant_indices:
+                # No expression can take this value - skip
+                continue
+
+            if len(relevant_indices) == 1:
+                # Only one expression can take this value - direct check
+                present.append(exprs[relevant_indices[0]] == val)
+            else:
+                # Multiple expressions - use count on relevant subset
+                relevant_exprs = [exprs[i] for i in relevant_indices]
+                present.append(modeler.count(relevant_exprs, val) >= 1)
+
         nvalues_expr = modeler.sum(present) if present else 0
         self._apply_condition(nvalues_expr, condition)
-        self._log(2, "Added NValues constraint")
+        self._log(2, f"Added NValues constraint ({len(present)} values)")
 
     def ctr_atleast(self, lst: list[Variable], value: int, k: int):
         """AtLeast constraint."""
