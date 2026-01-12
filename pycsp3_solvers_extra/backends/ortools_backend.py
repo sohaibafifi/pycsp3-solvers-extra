@@ -204,7 +204,8 @@ class ORToolsCallbacks(BaseCallbacks):
             return self._as_bool_var(expr)
         return expr
 
-    def translate_node(self, node: Node) -> Any:
+    def _translate_node_impl(self, node: Node) -> Any:
+        """OR-Tools specific node translation with proper bounds computation."""
         if node.type == TypeNode.ABS:
             expr = self._as_int_expr(self.translate_node(node.cnt[0]))
             lb, ub = self._node_bounds(node)
@@ -259,7 +260,7 @@ class ORToolsCallbacks(BaseCallbacks):
             self.model.Add(result == then_val).OnlyEnforceIf(cond)
             self.model.Add(result == else_val).OnlyEnforceIf(cond.Not())
             return result
-        return super().translate_node(node)
+        return super()._translate_node_impl(node)
 
     # ========== OR-Tools specific expression operations ==========
 

@@ -216,7 +216,7 @@ class CPOCallbacks(BaseCallbacks):
             return expr
         return expr != 0
 
-    def translate_node(self, node: Node) -> Any:
+    def _translate_node_impl(self, node: Node) -> Any:
         """Translate expression tree node to CPO expression."""
         from pycsp3.classes.nodes import TypeNode
 

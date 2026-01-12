@@ -78,6 +78,10 @@ class BaseCallbacks(Callbacks):
         # Variable mapping: pycsp3 var id -> solver var
         self.vars: dict[str, Any] = {}
 
+        # Expression memoization cache: id(node) -> translated expression
+        # This avoids re-translating identical subtrees within a model
+        self._node_cache: dict[int, Any] = {}
+
         # Solution storage
         self._solution: dict[str, int] | None = None
         self._status: TypeStatus = TypeStatus.UNKNOWN
@@ -109,8 +113,27 @@ class BaseCallbacks(Callbacks):
         """
         Translate a pycsp3 Node expression tree to solver expression.
 
-        Subclasses should override this if they need solver-specific translation.
-        The default implementation handles common patterns.
+        Uses memoization to avoid re-translating identical subtrees.
+        Subclasses should override _translate_node_impl() if they need
+        solver-specific translation, not this method.
+        """
+        # Check cache first using object id as key
+        # This is safe within a single model building session since
+        # pycsp3 nodes are not garbage collected during constraint processing
+        cache_key = id(node)
+        if cache_key in self._node_cache:
+            return self._node_cache[cache_key]
+
+        # Translate and cache the result
+        result = self._translate_node_impl(node)
+        self._node_cache[cache_key] = result
+        return result
+
+    def _translate_node_impl(self, node: Node) -> Any:
+        """
+        Internal implementation of node translation.
+
+        Override this method in subclasses for solver-specific translation.
         """
         if node.type == TypeNode.VAR:
             var_id = node.cnt.id
@@ -380,6 +403,15 @@ class BaseCallbacks(Callbacks):
         """Log message if verbosity is high enough."""
         if self.verbose >= level:
             print(msg)
+
+    def clear_expression_cache(self) -> None:
+        """
+        Clear the expression memoization cache.
+
+        Call this between solving different problems with the same backend
+        instance, or when memory usage is a concern with very large models.
+        """
+        self._node_cache.clear()
 
     def _get_var_list(self, scope: list[Variable]) -> list[Any]:
         """Convert list of pycsp3 Variables to list of solver variables."""
