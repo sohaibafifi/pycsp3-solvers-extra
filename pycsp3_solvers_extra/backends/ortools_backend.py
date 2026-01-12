@@ -172,7 +172,8 @@ class ORToolsCallbacks(BaseCallbacks):
         return -max_mod, max_mod
 
     def _node_bounds(self, node: Node) -> tuple[int, int]:
-        cache_key = id(node)
+        # Use structural key for reliable caching (avoids id() reuse issues)
+        cache_key = self._node_structural_key(node)
         if cache_key in self._bounds_cache:
             return self._bounds_cache[cache_key]
 

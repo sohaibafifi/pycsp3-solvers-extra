@@ -109,18 +109,67 @@ class BaseCallbacks(Callbacks):
 
     # ========== Expression tree translation ==========
 
+    def _node_structural_key(self, node: Node) -> tuple:
+        """
+        Create a hashable structural key from a pycsp3 Node.
+
+        This is more reliable than id(node) because Python can reuse object IDs
+        after garbage collection. The structural key is based on the node's
+        actual content, ensuring cache correctness.
+
+        Even if id(node) is safe within a single model building session since
+        pycsp3 nodes are not garbage collected during constraint processing, 
+        using a structural key future-proofs the code against potential issues
+        in more complex scenarios (e.g., long-running processes, multiple models).
+
+        Returns a tuple that uniquely identifies the node's structure and values.
+        """
+        node_type = node.type
+
+        if node_type == TypeNode.VAR:
+            # Variable: use its unique id
+            return ("VAR", node.cnt.id)
+
+        elif node_type == TypeNode.INT:
+            # Integer constant
+            return ("INT", node.cnt)
+
+        elif node_type == TypeNode.SYMBOL:
+            # Symbolic constant
+            return ("SYMBOL", node.cnt)
+
+        elif node_type == TypeNode.SET:
+            # Set of values - hash the sorted tuple of values
+            children = tuple(self._node_structural_key(c) for c in node.cnt)
+            return ("SET", children)
+
+        else:
+            # Operator node: recursively hash children
+            # node.cnt contains the child nodes/values
+            children = []
+            for child in node.cnt:
+                if isinstance(child, Node):
+                    children.append(self._node_structural_key(child))
+                elif isinstance(child, Variable):
+                    children.append(("VAR", child.id))
+                else:
+                    # Literal value (int, etc.)
+                    children.append(("LIT", child))
+            return (node_type.name, tuple(children))
+
     def translate_node(self, node: Node) -> Any:
         """
         Translate a pycsp3 Node expression tree to solver expression.
 
-        Uses memoization to avoid re-translating identical subtrees.
+        Uses memoization with structural keys to avoid re-translating identical
+        subtrees. Structural keys are more reliable than id(node) because Python
+        can reuse object IDs after garbage collection.
+
         Subclasses should override _translate_node_impl() if they need
         solver-specific translation, not this method.
         """
-        # Check cache first using object id as key
-        # This is safe within a single model building session since
-        # pycsp3 nodes are not garbage collected during constraint processing
-        cache_key = id(node)
+        # Use structural key for reliable caching
+        cache_key = self._node_structural_key(node)
         if cache_key in self._node_cache:
             return self._node_cache[cache_key]
 
