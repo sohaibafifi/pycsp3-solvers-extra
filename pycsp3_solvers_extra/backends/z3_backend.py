@@ -768,7 +768,7 @@ class Z3Callbacks(BaseCallbacks):
         heights: list[int] | list[Variable],
         condition: Condition,
     ):
-        """Cumulative constraint."""
+        """Cumulative constraint using event-based formulation."""
         from pycsp3.classes.auxiliary.conditions import ConditionValue, ConditionVariable
 
         # Get capacity from condition (supported: LE with constant/variable)
@@ -787,41 +787,59 @@ class Z3Callbacks(BaseCallbacks):
 
         n = len(origins)
 
-        # Time-indexed formulation: for each time point, sum of active heights <= capacity
-        # Get time horizon from variable domains
-        min_time, max_time = 0, 0
-        for i, orig in enumerate(origins):
-            min_time = min(min_time, orig.dom.smallest_value())
+        # Precompute solver expressions for starts, lengths, heights
+        starts = [self.vars[origins[i].id] for i in range(n)]
+        lens = []
+        for i in range(n):
             if isinstance(lengths[i], int):
-                max_time = max(max_time, orig.dom.greatest_value() + lengths[i])
+                lens.append(lengths[i])
             else:
-                max_time = max(
-                    max_time,
-                    orig.dom.greatest_value() + lengths[i].dom.greatest_value(),
-                )
+                lens.append(self.vars[lengths[i].id])
 
-        # For each time point, sum heights of active tasks
-        for t in range(min_time, max_time + 1):
-            active_heights = []
-            for i in range(n):
-                start = self.vars[origins[i].id]
-                if isinstance(lengths[i], int):
-                    length = lengths[i]
-                else:
-                    length = self.vars[lengths[i].id]
+        hts = []
+        for i in range(n):
+            if isinstance(heights[i], int):
+                hts.append(heights[i])
+            else:
+                hts.append(self.vars[heights[i].id])
 
-                if isinstance(heights[i], int):
-                    height = heights[i]
-                else:
-                    height = self.vars[heights[i].id]
+        # Event-based formulation: at each task's start time, check capacity
+        # For each task i, at time start[i], the sum of heights of all tasks
+        # that are active at that time must not exceed capacity.
+        #
+        # Task j is active at time start[i] if:
+        #   start[j] <= start[i] < start[j] + length[j]
+        #
+        # This gives O(n²) constraints instead of O(T*n) for time-indexed.
 
-                # Task is active at time t if start <= t < start + length
-                is_active = And(start <= t, t < start + length)
-                active_heights.append(If(is_active, height, 0))
+        for i in range(n):
+            # At time start[i], which tasks are active?
+            # Task i is always active at its own start time
+            overlapping_heights = [hts[i]]
 
-            self._add_constraint(Sum(active_heights) <= capacity)
+            for j in range(n):
+                if i != j:
+                    # Task j is active at start[i] if start[j] <= start[i] < start[j] + lens[j]
+                    j_active = And(starts[j] <= starts[i], starts[i] < starts[j] + lens[j])
+                    overlapping_heights.append(If(j_active, hts[j], 0))
 
-        self._log(2, f"Added Cumulative constraint on {n} tasks")
+            self._add_constraint(Sum(overlapping_heights) <= capacity)
+
+        # Also check at each task's end time for completeness
+        # This handles edge cases where capacity is violated just before a task ends
+        for i in range(n):
+            end_i = starts[i] + lens[i] - 1  # Last active time point for task i
+            overlapping_heights = [hts[i]]  # Task i is still active
+
+            for j in range(n):
+                if i != j:
+                    # Task j is active at end_i if start[j] <= end_i < start[j] + lens[j]
+                    j_active = And(starts[j] <= end_i, end_i < starts[j] + lens[j])
+                    overlapping_heights.append(If(j_active, hts[j], 0))
+
+            self._add_constraint(Sum(overlapping_heights) <= capacity)
+
+        self._log(2, f"Added Cumulative constraint on {n} tasks (event-based, {2*n} check points)")
 
     def ctr_ordered(
         self,
