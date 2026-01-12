@@ -57,12 +57,17 @@ class ORToolsCallbacks(BaseCallbacks):
         self._all_solutions: list[dict[str, int]] = []
         self._bounds_cache: dict[int, tuple[int, int]] = {}
 
+        # Track bounds of solver expressions for tighter auxiliary variable domains
+        # Maps id(expr) -> (lb, ub)
+        self._expr_bounds: dict[int, tuple[int, int]] = {}
+
     # ========== Variable creation ==========
 
     def var_integer_range(self, x: Variable, min_value: int, max_value: int):
         """Create integer variable with range domain."""
         var = self.model.NewIntVar(min_value, max_value, x.id)
         self.vars[x.id] = var
+        self._expr_bounds[id(var)] = (min_value, max_value)
         self._log(2, f"Created var {x.id} in [{min_value}, {max_value}]")
 
     def new_aux_int_var(self, lb: int, ub: int, name_hint: str = "aux") -> Any:
@@ -74,6 +79,7 @@ class ORToolsCallbacks(BaseCallbacks):
         domain = cp_model.Domain.FromValues(values)
         var = self.model.NewIntVarFromDomain(domain, x.id)
         self.vars[x.id] = var
+        self._expr_bounds[id(var)] = (min(values), max(values))
         self._log(2, f"Created var {x.id} with domain {values[:5]}{'...' if len(values) > 5 else ''}")
 
     def var_symbolic(self, x: Variable, values: list[str]):
@@ -81,6 +87,7 @@ class ORToolsCallbacks(BaseCallbacks):
         # Map symbolic values to integers 0, 1, 2, ...
         var = self.model.NewIntVar(0, len(values) - 1, x.id)
         self.vars[x.id] = var
+        self._expr_bounds[id(var)] = (0, len(values) - 1)
         self._log(2, f"Created symbolic var {x.id} with {len(values)} values")
 
     # ========== Bound helpers ==========
@@ -98,6 +105,51 @@ class ORToolsCallbacks(BaseCallbacks):
         if isinstance(values, int):
             return values, values
         return 0, 0
+
+    def _get_expr_bounds(self, expr: Any) -> tuple[int, int]:
+        """
+        Get bounds for a solver expression.
+
+        This enables tighter auxiliary variable domains instead of using
+        hardcoded 10**9 bounds, which improves solver performance.
+        """
+        # Integer constants
+        if isinstance(expr, int):
+            return (expr, expr)
+
+        # Boolean variables have domain [0, 1]
+        if isinstance(expr, cp_model.IntVar):
+            # Check if we have tracked bounds
+            expr_id = id(expr)
+            if expr_id in self._expr_bounds:
+                return self._expr_bounds[expr_id]
+            # For BoolVar, return [0, 1]
+            # Note: We can't easily distinguish BoolVar from IntVar here,
+            # so we rely on tracked bounds for accuracy
+            return (-10**9, 10**9)  # Fallback for untracked vars
+
+        # Linear expressions: compute from coefficients and variable bounds
+        if hasattr(expr, '__iter__') and not isinstance(expr, (str, bytes)):
+            # List of expressions - compute combined bounds
+            try:
+                bounds = [self._get_expr_bounds(e) for e in expr]
+                return (sum(b[0] for b in bounds), sum(b[1] for b in bounds))
+            except (TypeError, AttributeError):
+                pass
+
+        # Fallback for complex expressions
+        return (-10**9, 10**9)
+
+    def _get_expr_list_bounds(self, exprs: list[Any]) -> tuple[int, int]:
+        """Get combined bounds for a list of expressions (for min/max operations)."""
+        if not exprs:
+            return (0, 0)
+        bounds = [self._get_expr_bounds(e) for e in exprs]
+        return (min(b[0] for b in bounds), max(b[1] for b in bounds))
+
+    def _track_bounds(self, expr: Any, lb: int, ub: int) -> None:
+        """Track bounds for a solver expression."""
+        self._expr_bounds[id(expr)] = (lb, ub)
 
     def _div_bounds(self, lb1: int, ub1: int, lb2: int, ub2: int) -> tuple[int, int]:
         max_num_abs = max(abs(lb1), abs(ub1))
@@ -268,42 +320,69 @@ class ORToolsCallbacks(BaseCallbacks):
         """Absolute value."""
         if isinstance(a, int):
             return abs(a)
-        # Create auxiliary variable for |a|
-        # Need to determine bounds
-        result = self.model.NewIntVar(0, 10**9, "")
+        # Compute bounds for |a|
+        lb_a, ub_a = self._get_expr_bounds(a)
+        max_abs = max(abs(lb_a), abs(ub_a))
+        if lb_a <= 0 <= ub_a:
+            result_lb = 0
+        else:
+            result_lb = min(abs(lb_a), abs(ub_a))
+        result = self.model.NewIntVar(result_lb, max_abs, "")
         self.model.AddAbsEquality(result, a)
+        self._track_bounds(result, result_lb, max_abs)
         return result
 
     def _min(self, args: list[Any]) -> Any:
         """Minimum of expressions."""
         if all(isinstance(a, int) for a in args):
             return min(args)
-        result = self.model.NewIntVar(-10**9, 10**9, "")
+        # Compute bounds: min can be as low as the smallest lower bound,
+        # and as high as the smallest upper bound
+        bounds = [self._get_expr_bounds(a) for a in args]
+        lb = min(b[0] for b in bounds)
+        ub = min(b[1] for b in bounds)
+        result = self.model.NewIntVar(lb, ub, "")
         self.model.AddMinEquality(result, args)
+        self._track_bounds(result, lb, ub)
         return result
 
     def _max(self, args: list[Any]) -> Any:
         """Maximum of expressions."""
         if all(isinstance(a, int) for a in args):
             return max(args)
-        result = self.model.NewIntVar(-10**9, 10**9, "")
+        # Compute bounds: max can be as low as the largest lower bound,
+        # and as high as the largest upper bound
+        bounds = [self._get_expr_bounds(a) for a in args]
+        lb = max(b[0] for b in bounds)
+        ub = max(b[1] for b in bounds)
+        result = self.model.NewIntVar(lb, ub, "")
         self.model.AddMaxEquality(result, args)
+        self._track_bounds(result, lb, ub)
         return result
 
     def _div(self, a: Any, b: Any) -> Any:
         """Integer division."""
         if isinstance(a, int) and isinstance(b, int):
             return a // b
-        result = self.model.NewIntVar(-10**9, 10**9, "")
+        lb_a, ub_a = self._get_expr_bounds(a)
+        lb_b, ub_b = self._get_expr_bounds(b)
+        lb, ub = self._div_bounds(lb_a, ub_a, lb_b, ub_b)
+        result = self.model.NewIntVar(lb, ub, "")
         self.model.AddDivisionEquality(result, a, b)
+        self._track_bounds(result, lb, ub)
         return result
 
     def _mod(self, a: Any, b: Any) -> Any:
         """Modulo."""
         if isinstance(a, int) and isinstance(b, int):
             return a % b
-        result = self.model.NewIntVar(0, 10**9, "")
+        lb_b, ub_b = self._get_expr_bounds(b)
+        lb, ub = self._mod_bounds(lb_b, ub_b)
+        # Modulo result is always in [0, max(|b|)-1] for positive a,
+        # but can be negative for negative a. Use conservative bounds.
+        result = self.model.NewIntVar(lb, ub, "")
         self.model.AddModuloEquality(result, a, b)
+        self._track_bounds(result, lb, ub)
         return result
 
     def _mul(self, a: Any, b: Any) -> Any:
@@ -426,10 +505,16 @@ class ORToolsCallbacks(BaseCallbacks):
     def _if_then_else(self, cond: Any, then_val: Any, else_val: Any) -> Any:
         """Ternary if-then-else."""
         cond = self._as_bool_var(cond)
-        result = self.model.NewIntVar(-10**9, 10**9, "")
+        # Compute bounds from both branches
+        lb_then, ub_then = self._get_expr_bounds(then_val)
+        lb_else, ub_else = self._get_expr_bounds(else_val)
+        lb = min(lb_then, lb_else)
+        ub = max(ub_then, ub_else)
+        result = self.model.NewIntVar(lb, ub, "")
         # result == then_val if cond else else_val
         self.model.Add(result == then_val).OnlyEnforceIf(cond)
         self.model.Add(result == else_val).OnlyEnforceIf(cond.Not())
+        self._track_bounds(result, lb, ub)
         return result
 
     def _in_set(self, val: Any, set_vals: list[Any]) -> Any:
@@ -733,9 +818,12 @@ class ORToolsCallbacks(BaseCallbacks):
             target = self.model.NewIntVar(min(lst), max(lst), "")
             self.model.AddElement(index_var, lst, target)
         else:
-            # Variable array
+            # Variable array - compute bounds from all possible values
             vars_list = [self.vars[v.id] if isinstance(v, Variable) else v for v in lst]
-            target = self.model.NewIntVar(-10**9, 10**9, "")
+            bounds = [self._get_expr_bounds(v) for v in vars_list]
+            lb = min(b[0] for b in bounds)
+            ub = max(b[1] for b in bounds)
+            target = self.model.NewIntVar(lb, ub, "")
             self.model.AddElement(index_var, vars_list, target)
 
         self._apply_condition_to_model(target, condition)
@@ -744,7 +832,11 @@ class ORToolsCallbacks(BaseCallbacks):
     def ctr_minimum(self, lst: list[Variable] | list[Node], condition: Condition):
         """Minimum constraint."""
         exprs = self._get_var_or_node_list(lst)
-        min_var = self.model.NewIntVar(-10**9, 10**9, "")
+        # Compute bounds: min is at most the smallest upper bound
+        bounds = [self._get_expr_bounds(e) for e in exprs]
+        lb = min(b[0] for b in bounds)
+        ub = min(b[1] for b in bounds)
+        min_var = self.model.NewIntVar(lb, ub, "")
         self.model.AddMinEquality(min_var, exprs)
         self._apply_condition_to_model(min_var, condition)
         self._log(2, f"Added Minimum constraint")
@@ -752,7 +844,11 @@ class ORToolsCallbacks(BaseCallbacks):
     def ctr_maximum(self, lst: list[Variable] | list[Node], condition: Condition):
         """Maximum constraint."""
         exprs = self._get_var_or_node_list(lst)
-        max_var = self.model.NewIntVar(-10**9, 10**9, "")
+        # Compute bounds: max is at least the largest lower bound
+        bounds = [self._get_expr_bounds(e) for e in exprs]
+        lb = max(b[0] for b in bounds)
+        ub = max(b[1] for b in bounds)
+        max_var = self.model.NewIntVar(lb, ub, "")
         self.model.AddMaxEquality(max_var, exprs)
         self._apply_condition_to_model(max_var, condition)
         self._log(2, f"Added Maximum constraint")
@@ -1112,11 +1208,19 @@ class ORToolsCallbacks(BaseCallbacks):
             else:
                 obj_expr = self._weighted_sum(exprs, coefficients)
         elif obj_type == TypeObj.MAXIMUM:
-            obj_var = self.model.NewIntVar(-10**9, 10**9, "obj_max")
+            # Compute bounds for max objective
+            bounds = [self._get_expr_bounds(e) for e in exprs]
+            lb = max(b[0] for b in bounds)
+            ub = max(b[1] for b in bounds)
+            obj_var = self.model.NewIntVar(lb, ub, "obj_max")
             self.model.AddMaxEquality(obj_var, exprs)
             obj_expr = obj_var
         elif obj_type == TypeObj.MINIMUM:
-            obj_var = self.model.NewIntVar(-10**9, 10**9, "obj_min")
+            # Compute bounds for min objective
+            bounds = [self._get_expr_bounds(e) for e in exprs]
+            lb = min(b[0] for b in bounds)
+            ub = min(b[1] for b in bounds)
+            obj_var = self.model.NewIntVar(lb, ub, "obj_min")
             self.model.AddMinEquality(obj_var, exprs)
             obj_expr = obj_var
         elif obj_type == TypeObj.NVALUES:
@@ -1138,11 +1242,19 @@ class ORToolsCallbacks(BaseCallbacks):
             else:
                 obj_expr = self._weighted_sum(exprs, coefficients)
         elif obj_type == TypeObj.MAXIMUM:
-            obj_var = self.model.NewIntVar(-10**9, 10**9, "obj_max")
+            # Compute bounds for max objective
+            bounds = [self._get_expr_bounds(e) for e in exprs]
+            lb = max(b[0] for b in bounds)
+            ub = max(b[1] for b in bounds)
+            obj_var = self.model.NewIntVar(lb, ub, "obj_max")
             self.model.AddMaxEquality(obj_var, exprs)
             obj_expr = obj_var
         elif obj_type == TypeObj.MINIMUM:
-            obj_var = self.model.NewIntVar(-10**9, 10**9, "obj_min")
+            # Compute bounds for min objective
+            bounds = [self._get_expr_bounds(e) for e in exprs]
+            lb = min(b[0] for b in bounds)
+            ub = min(b[1] for b in bounds)
+            obj_var = self.model.NewIntVar(lb, ub, "obj_min")
             self.model.AddMinEquality(obj_var, exprs)
             obj_expr = obj_var
         else:
