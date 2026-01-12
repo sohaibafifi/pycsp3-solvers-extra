@@ -337,6 +337,56 @@ class CPOCallbacks(BaseCallbacks):
         elif op == TypeConditionOperator.GE:
             self.model.add(expr >= right)
 
+    # ========== Set membership operations ==========
+
+    def _in_set(self, val: Any, set_vals: list[Any]) -> Any:
+        """Set membership with optimizations.
+
+        Optimizations applied (based on benchmarks):
+        1. Empty set: return false constant
+        2. Consecutive integer range (>=3 values): use range constraint
+        """
+        if not set_vals:
+            return modeler.false()
+
+        # Check if all values are constant integers
+        const_vals = [v for v in set_vals if isinstance(v, int)]
+        if len(const_vals) == len(set_vals) and len(const_vals) >= 3:
+            sorted_vals = sorted(const_vals)
+            min_val, max_val = sorted_vals[0], sorted_vals[-1]
+
+            # Check if values form a consecutive range
+            if max_val - min_val + 1 == len(sorted_vals):
+                return modeler.logical_and(val >= min_val, val <= max_val)
+
+        # General case: OR of equalities
+        return modeler.logical_or([val == v for v in set_vals])
+
+    def _not_in_set(self, val: Any, set_vals: list[Any]) -> Any:
+        """Set non-membership with optimizations.
+
+        Optimizations applied (based on benchmarks):
+        1. Empty set: return true constant
+        2. Consecutive integer range (>=3 values): use Or(val < min, val > max)
+        """
+        if not set_vals:
+            return modeler.true()
+
+        # Note: Single value optimization removed based on Z3 benchmarks
+
+        # Check if all values are constant integers
+        const_vals = [v for v in set_vals if isinstance(v, int)]
+        if len(const_vals) == len(set_vals) and len(const_vals) >= 3:
+            sorted_vals = sorted(const_vals)
+            min_val, max_val = sorted_vals[0], sorted_vals[-1]
+
+            # Check if values form a consecutive range
+            if max_val - min_val + 1 == len(sorted_vals):
+                return modeler.logical_or(val < min_val, val > max_val)
+
+        # General case: AND of inequalities
+        return modeler.logical_and([val != v for v in set_vals])
+
     # ========== Constraint callbacks ==========
 
     def ctr_intension(self, scope: list[Variable], tree: Node):

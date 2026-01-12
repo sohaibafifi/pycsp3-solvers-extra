@@ -518,8 +518,41 @@ class ORToolsCallbacks(BaseCallbacks):
         return result
 
     def _in_set(self, val: Any, set_vals: list[Any]) -> Any:
-        """Set membership."""
-        # Use OR of equalities; works for both variables and linear expressions.
+        """Set membership with domain-aware filtering.
+
+        Optimizations applied (based on benchmarks):
+        1. Domain filtering: Only filter when >10 values would be removed
+        2. Empty set after filtering: return constant false
+        3. Single value: direct equality
+        """
+        # Get all constant values from set_vals
+        const_vals = [v for v in set_vals if isinstance(v, int)]
+
+        # Filter by val's bounds if all set values are constants
+        if len(const_vals) == len(set_vals):
+            lb, ub = self._get_expr_bounds(val)
+            # Only keep values that are within bounds
+            filtered_vals = [v for v in const_vals if lb <= v <= ub]
+
+            # Special case: empty set after filtering
+            if not filtered_vals:
+                result = self.model.NewBoolVar("")
+                self.model.Add(result == 0)  # Always false
+                return result
+
+            # Special case: single value - direct equality reification
+            if len(filtered_vals) == 1:
+                result = self.model.NewBoolVar("")
+                self.model.Add(val == filtered_vals[0]).OnlyEnforceIf(result)
+                self.model.Add(val != filtered_vals[0]).OnlyEnforceIf(result.Not())
+                return result
+
+            # Only apply domain filtering if we remove >10 values
+            values_removed = len(const_vals) - len(filtered_vals)
+            if values_removed > 10:
+                set_vals = filtered_vals
+
+        # General case: use OR of equalities
         result = self.model.NewBoolVar("")
         or_vars = []
         for v in set_vals:
@@ -527,12 +560,42 @@ class ORToolsCallbacks(BaseCallbacks):
             self.model.Add(val == v).OnlyEnforceIf(eq_var)
             self.model.Add(val != v).OnlyEnforceIf(eq_var.Not())
             or_vars.append(eq_var)
-        self.model.AddBoolOr(or_vars).OnlyEnforceIf(result)
-        self.model.AddBoolAnd([v.Not() for v in or_vars]).OnlyEnforceIf(result.Not())
+
+        if not or_vars:
+            self.model.Add(result == 0)
+        else:
+            self.model.AddBoolOr(or_vars).OnlyEnforceIf(result)
+            self.model.AddBoolAnd([v.Not() for v in or_vars]).OnlyEnforceIf(result.Not())
         return result
 
     def _not_in_set(self, val: Any, set_vals: list[Any]) -> Any:
-        """Set non-membership."""
+        """Set non-membership with domain-aware filtering.
+
+        Uses same optimizations as _in_set based on benchmarks.
+        """
+        # Get all constant values from set_vals
+        const_vals = [v for v in set_vals if isinstance(v, int)]
+
+        # Filter by val's bounds if all set values are constants
+        if len(const_vals) == len(set_vals):
+            lb, ub = self._get_expr_bounds(val)
+            # Only keep values that are within bounds
+            filtered_vals = [v for v in const_vals if lb <= v <= ub]
+
+            # Special case: no values in domain - always true
+            if not filtered_vals:
+                result = self.model.NewBoolVar("")
+                self.model.Add(result == 1)  # Always true
+                return result
+
+            # Special case: single value
+            if len(filtered_vals) == 1:
+                result = self.model.NewBoolVar("")
+                self.model.Add(val != filtered_vals[0]).OnlyEnforceIf(result)
+                self.model.Add(val == filtered_vals[0]).OnlyEnforceIf(result.Not())
+                return result
+
+        # General case: use negation of _in_set
         in_set = self._in_set(val, set_vals)
         return in_set.Not()
 
