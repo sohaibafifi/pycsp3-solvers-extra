@@ -728,35 +728,39 @@ class CPOCallbacks(BaseCallbacks):
         self._log(2, f"Added NoOverlap constraint on {len(intervals)} intervals")
 
     def ctr_circuit(self, lst: list[Variable], start_index: int | None = 0):
-        """Circuit constraint (Hamiltonian cycle)."""
-        # CPO doesn't have direct circuit, use sub_circuit
+        """Circuit constraint (Hamiltonian cycle).
+
+        Uses CPO's native sub_circuit constraint which is much more efficient
+        than manual O(n²) subtour elimination decomposition.
+        """
         vars_list = self._get_var_list(lst)
         if start_index is None:
             start_index = 0
-        # Create successor representation for circuit
-        # In pycsp3, circuit means: lst[i] = j means edge from i to j
-        # We need to enforce that following successors visits all nodes exactly once
         n = len(vars_list)
 
-        # Use subtour elimination with position variables
-        pos = [self.model.integer_var(0, n - 1, f"_pos_{i}") for i in range(n)]
+        # CPO's sub_circuit expects 0-indexed successors
+        # If start_index != 0, we need to adjust the variables
+        if start_index == 0:
+            # Direct use of sub_circuit
+            self.model.add(modeler.sub_circuit(vars_list))
 
-        # All different positions
-        self.model.add(modeler.all_diff(pos))
+            # sub_circuit allows partial circuits (nodes with next[i]=i are excluded)
+            # For full Hamiltonian circuit, prohibit self-loops
+            for i in range(n):
+                self.model.add(vars_list[i] != i)
+        else:
+            # Create 0-indexed auxiliary variables: aux[i] = vars[i] - start_index
+            aux_vars = [self.model.integer_var(0, n - 1, f"_circuit_aux_{i}") for i in range(n)]
+            for i in range(n):
+                self.model.add(aux_vars[i] == vars_list[i] - start_index)
 
-        # Position constraints for subtour elimination
-        for i in range(n):
-            for j in range(n):
-                if i != j:
-                    # If lst[i] == j, then pos[j] = pos[i] + 1 (mod n)
-                    self.model.add(
-                        modeler.if_then(
-                            vars_list[i] == j + start_index,
-                            (pos[j] == pos[i] + 1) | ((pos[i] == n - 1) & (pos[j] == 0))
-                        )
-                    )
+            self.model.add(modeler.sub_circuit(aux_vars))
 
-        self._log(2, f"Added Circuit constraint")
+            # Prohibit self-loops for full circuit
+            for i in range(n):
+                self.model.add(aux_vars[i] != i)
+
+        self._log(2, f"Added Circuit constraint (native sub_circuit)")
 
     def ctr_ordered(self, lst: list[Variable], operator: str, lengths: None | list[int] | list[Variable]):
         """Ordered constraint (increasing/decreasing)."""
