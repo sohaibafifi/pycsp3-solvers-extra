@@ -326,6 +326,17 @@ class TestAllEqual:
         sol = values(x)
         assert len(set(sol)) == 1
 
+    def test_not_all_equal(self):
+        """Test NotAllEqual constraint (at least 2 distinct values)."""
+        x = VarArray(size=4, dom=range(1, 5))
+        satisfy(NotAllEqual(x))
+
+        status = solve(solver="cpo")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        assert len(set(sol)) > 1, "NotAllEqual requires at least 2 distinct values"
+
 
 class TestIntensionConstraints:
     """Tests for intension (expression) constraints."""

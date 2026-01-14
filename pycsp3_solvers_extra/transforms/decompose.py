@@ -74,6 +74,11 @@ def _decompose_common(
                 calls.append(ConstraintCall("ctr_count", ([var], values, in_values), {}))
         return calls
 
+    if call.name == "ctr_not_all_qual":
+        (lst,) = call.args
+        condition = Condition.build_condition((TypeConditionOperator.GE, 2))
+        return [ConstraintCall("ctr_nvalues", (lst, None, condition), {})]
+
     if call.name == "ctr_element_matrix":
         matrix, row_index, col_index, condition = call.args
 
