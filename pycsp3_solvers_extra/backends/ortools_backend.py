@@ -1047,6 +1047,39 @@ class ORToolsCallbacks(BaseCallbacks):
 
         self._log(2, f"Added Circuit constraint on {n} nodes")
 
+    def ctr_regular(
+        self,
+        scope: list[Variable],
+        transitions: list,
+        start_state: str,
+        final_states: list[str],
+    ):
+        """Regular constraint using finite automaton."""
+        vars_list = self._get_var_list(scope)
+
+        # Map string states to integers
+        all_states = set()
+        all_states.add(start_state)
+        all_states.update(final_states)
+        for src, symbol, dst in transitions:
+            all_states.add(src)
+            all_states.add(dst)
+
+        state_to_int = {state: i for i, state in enumerate(sorted(all_states))}
+
+        # Convert transitions to integer triples
+        int_transitions = [
+            (state_to_int[src], symbol, state_to_int[dst])
+            for src, symbol, dst in transitions
+        ]
+
+        # Convert start and final states
+        int_start = state_to_int[start_state]
+        int_finals = [state_to_int[s] for s in final_states]
+
+        self.model.AddAutomaton(vars_list, int_start, int_finals, int_transitions)
+        self._log(2, f"Added Regular constraint with {len(transitions)} transitions")
+
     def ctr_clause(self, pos: list[Variable], neg: list[Variable]):
         """Clause constraint (OR of positive and negated variables)."""
         literals = []

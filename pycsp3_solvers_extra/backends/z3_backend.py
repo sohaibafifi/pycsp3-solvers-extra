@@ -753,6 +753,77 @@ class Z3Callbacks(BaseCallbacks):
 
         self._log(2, f"Added Circuit constraint on {n} nodes")
 
+    _regular_counter = 0  # Class variable for unique naming
+
+    def ctr_regular(
+        self,
+        scope: list[Variable],
+        transitions: list,
+        start_state: str,
+        final_states: list[str],
+    ):
+        """Regular constraint using finite automaton (decomposed)."""
+        vars_list = self._get_var_list(scope)
+        n = len(vars_list)
+
+        # Get unique ID for this constraint's state variables
+        reg_id = Z3Callbacks._regular_counter
+        Z3Callbacks._regular_counter += 1
+
+        # Map string states to integers
+        all_states = set()
+        all_states.add(start_state)
+        all_states.update(final_states)
+        for src, symbol, dst in transitions:
+            all_states.add(src)
+            all_states.add(dst)
+
+        state_to_int = {state: i for i, state in enumerate(sorted(all_states))}
+        num_states = len(all_states)
+
+        int_start = state_to_int[start_state]
+        int_finals = [state_to_int[s] for s in final_states]
+
+        # Create state variables q[0..n] with unique names per constraint
+        state_vars = [Int(f"_reg{reg_id}_state_{i}") for i in range(n + 1)]
+        for sv in state_vars:
+            self._add_constraint(And(sv >= 0, sv < num_states))
+
+        # Initial state
+        self._add_constraint(state_vars[0] == int_start)
+
+        # Final state must be accepting
+        if len(int_finals) == 1:
+            self._add_constraint(state_vars[n] == int_finals[0])
+        else:
+            self._add_constraint(Or([state_vars[n] == f for f in int_finals]))
+
+        # Build transition constraints
+        # Group transitions by (src_state, symbol) for efficiency
+        transition_map: dict[tuple[int, int], list[int]] = {}
+        for src, symbol, dst in transitions:
+            key = (state_to_int[src], symbol)
+            if key not in transition_map:
+                transition_map[key] = []
+            transition_map[key].append(state_to_int[dst])
+
+        # For each position, constrain transitions
+        for i in range(n):
+            # Collect all valid transitions for this position
+            valid_transitions = []
+            for (src_int, symbol), dst_list in transition_map.items():
+                for dst_int in dst_list:
+                    valid_transitions.append(
+                        And(
+                            state_vars[i] == src_int,
+                            vars_list[i] == symbol,
+                            state_vars[i + 1] == dst_int,
+                        )
+                    )
+            self._add_constraint(Or(valid_transitions))
+
+        self._log(2, f"Added Regular constraint with {len(transitions)} transitions (decomposed)")
+
     def ctr_clause(self, pos: list[Variable], neg: list[Variable]):
         """Clause constraint (OR of positive and negated variables)."""
         literals = []

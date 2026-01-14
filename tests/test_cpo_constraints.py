@@ -515,3 +515,89 @@ class TestKnapsackConstraint:
 
         assert total_weight <= capacity
         assert total_profit >= 12
+
+
+class TestRegularConstraint:
+    """Tests for Regular constraint (finite automaton)."""
+
+    def test_regular_basic(self):
+        """Test basic Regular constraint with simple automaton."""
+        # Automaton that accepts sequences ending with 1
+        # States: a (start), b (seen 1, accepting)
+        x = VarArray(size=5, dom={0, 1})
+
+        a, b = "a", "b"
+        transitions = [
+            (a, 0, a),  # Stay in a on 0
+            (a, 1, b),  # Go to b on 1
+            (b, 0, a),  # Back to a on 0
+            (b, 1, b),  # Stay in b on 1
+        ]
+        A = Automaton(start=a, final=b, transitions=transitions)
+        satisfy(x in A)
+
+        status = solve(solver="cpo")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        assert sol[-1] == 1, "Sequence should end with 1"
+
+    def test_regular_binary_pattern(self):
+        """Test Regular constraint matching binary pattern 11...0."""
+        # Must start with two 1s and end with 0
+        x = VarArray(size=4, dom={0, 1})
+
+        a, b, c, d = "a", "b", "c", "d"
+        transitions = [
+            (a, 1, b),  # First 1
+            (b, 1, c),  # Second 1
+            (c, 0, d),  # Then 0 (accepting)
+            (c, 1, c),  # More 1s allowed
+            (d, 0, d),  # More 0s allowed
+        ]
+        A = Automaton(start=a, final=d, transitions=transitions)
+        satisfy(x in A)
+
+        status = solve(solver="cpo")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        assert sol[0] == 1 and sol[1] == 1, "Must start with 11"
+        assert sol[-1] == 0, "Must end with 0"
+
+    def test_regular_no_consecutive_ones(self):
+        """Test Regular constraint: no two consecutive 1s."""
+        x = VarArray(size=6, dom={0, 1})
+
+        # States: a (start/after 0), b (after 1)
+        a, b = "a", "b"
+        transitions = [
+            (a, 0, a),
+            (a, 1, b),
+            (b, 0, a),
+            # No (b, 1, _) transition - reject consecutive 1s
+        ]
+        A = Automaton(start=a, final=[a, b], transitions=transitions)
+        satisfy(x in A)
+
+        status = solve(solver="cpo")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        for i in range(len(sol) - 1):
+            assert not (sol[i] == 1 and sol[i + 1] == 1), "No consecutive 1s allowed"
+
+    def test_regular_unsatisfiable(self):
+        """Test Regular constraint with impossible automaton."""
+        x = VarArray(size=3, dom={0, 1})
+
+        # Automaton requires value 2 which is not in domain
+        a, b = "a", "b"
+        transitions = [
+            (a, 2, b),  # Need 2 to reach accepting state
+        ]
+        A = Automaton(start=a, final=b, transitions=transitions)
+        satisfy(x in A)
+
+        status = solve(solver="cpo")
+        assert status == UNSAT

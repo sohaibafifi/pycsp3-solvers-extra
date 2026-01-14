@@ -783,6 +783,63 @@ class CPOCallbacks(BaseCallbacks):
 
         self._log(2, f"Added Circuit constraint (native sub_circuit)")
 
+    def ctr_regular(
+        self,
+        scope: list[Variable],
+        transitions: list,
+        start_state: str,
+        final_states: list[str],
+    ):
+        """Regular constraint using finite automaton (decomposed)."""
+        vars_list = self._get_var_list(scope)
+        n = len(vars_list)
+
+        # Map string states to integers
+        all_states = set()
+        all_states.add(start_state)
+        all_states.update(final_states)
+        for src, symbol, dst in transitions:
+            all_states.add(src)
+            all_states.add(dst)
+
+        state_to_int = {state: i for i, state in enumerate(sorted(all_states))}
+        num_states = len(all_states)
+
+        int_start = state_to_int[start_state]
+        int_finals = [state_to_int[s] for s in final_states]
+
+        # Create state variables q[0..n], q[i] = state after reading vars[0..i-1]
+        state_vars = [
+            self.model.integer_var(0, num_states - 1, f"_reg_state_{i}")
+            for i in range(n + 1)
+        ]
+
+        # Initial state
+        self.model.add(state_vars[0] == int_start)
+
+        # Final state must be accepting
+        if len(int_finals) == 1:
+            self.model.add(state_vars[n] == int_finals[0])
+        else:
+            self.model.add(modeler.allowed_assignments(state_vars[n], int_finals))
+
+        # Build transition table: list of (state, symbol, next_state)
+        int_transitions = [
+            (state_to_int[src], symbol, state_to_int[dst])
+            for src, symbol, dst in transitions
+        ]
+
+        # For each position, constrain transitions using table constraint
+        for i in range(n):
+            self.model.add(
+                modeler.allowed_assignments(
+                    (state_vars[i], vars_list[i], state_vars[i + 1]),
+                    int_transitions
+                )
+            )
+
+        self._log(2, f"Added Regular constraint with {len(transitions)} transitions (decomposed)")
+
     def ctr_ordered(self, lst: list[Variable], operator: str, lengths: None | list[int] | list[Variable]):
         """Ordered constraint (increasing/decreasing)."""
         vars_list = self._get_var_list(lst)
