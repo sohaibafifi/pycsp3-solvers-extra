@@ -1280,6 +1280,27 @@ class ORToolsCallbacks(BaseCallbacks):
             self._apply_condition_to_model(load_expr, condition)
         self._log(2, "Added BinPacking constraint with conditions")
 
+    def ctr_knapsack(
+        self,
+        lst: list[Variable],
+        weights: list[int],
+        wcondition: Condition,
+        profits: list[int],
+        pcondition: Condition,
+    ):
+        """Knapsack constraint: weight and profit conditions on selected items."""
+        selection = self._get_var_list(lst)
+
+        # Weight constraint: sum(weights[i] * lst[i]) satisfies wcondition
+        weight_sum = self._weighted_sum(selection, weights)
+        self._apply_condition_to_model(weight_sum, wcondition)
+
+        # Profit constraint: sum(profits[i] * lst[i]) satisfies pcondition
+        profit_sum = self._weighted_sum(selection, profits)
+        self._apply_condition_to_model(profit_sum, pcondition)
+
+        self._log(2, f"Added Knapsack constraint on {len(lst)} items")
+
     # ========== Primitive constraints (optimized) ==========
 
     def ctr_primitive1a(self, x: Variable, op: TypeConditionOperator, k: int):

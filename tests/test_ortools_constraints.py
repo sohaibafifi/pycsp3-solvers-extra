@@ -430,3 +430,100 @@ class TestIntensionConstraints:
         assert status in (SAT, OPTIMUM)
 
         assert value(x) * value(y) == 12
+
+
+class TestKnapsackConstraint:
+    """Tests for Knapsack constraint."""
+
+    def test_knapsack_basic(self):
+        """Test basic Knapsack constraint with weight limit and profit condition."""
+        # 5 items with binary selection
+        x = VarArray(size=5, dom=range(2))
+        weights = [2, 3, 4, 5, 6]
+        profits = [3, 4, 5, 6, 7]
+        capacity = 10
+
+        satisfy(Knapsack(x, weights=weights, wlimit=capacity, profits=profits) >= 10)
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        total_weight = sum(w * s for w, s in zip(weights, sol))
+        total_profit = sum(p * s for p, s in zip(profits, sol))
+
+        assert total_weight <= capacity, f"Weight {total_weight} exceeds capacity {capacity}"
+        assert total_profit >= 10, f"Profit {total_profit} < 10"
+
+    def test_knapsack_exact_weight(self):
+        """Test Knapsack with exact weight condition."""
+        x = VarArray(size=4, dom=range(2))
+        weights = [1, 2, 3, 4]
+        profits = [1, 2, 3, 4]
+
+        satisfy(Knapsack(x, weights=weights, wcondition=eq(5), profits=profits) >= 1)
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        total_weight = sum(w * s for w, s in zip(weights, sol))
+        assert total_weight == 5
+
+    def test_knapsack_maximize_profit(self):
+        """Test Knapsack with profit maximization."""
+        x = VarArray(size=4, dom=range(2))
+        weights = [2, 3, 4, 5]
+        profits = [3, 4, 5, 6]
+        capacity = 7
+
+        # Use a profit variable and maximize it
+        profit = Var(dom=range(100))
+        satisfy(
+            Knapsack(x, weights=weights, wlimit=capacity, profits=profits) == profit
+        )
+        maximize(profit)
+
+        status = solve(solver="ortools")
+        assert status == OPTIMUM
+
+        sol = values(x)
+        total_weight = sum(w * s for w, s in zip(weights, sol))
+        total_profit = sum(p * s for p, s in zip(profits, sol))
+
+        assert total_weight <= capacity
+        # Optimal: select items 0+3 or 1+2 (weight=7, profit=9)
+        assert total_profit == 9
+
+    def test_knapsack_unsatisfiable(self):
+        """Test Knapsack with impossible constraints."""
+        x = VarArray(size=3, dom=range(2))
+        weights = [5, 6, 7]
+        profits = [1, 1, 1]
+
+        # Weight limit is 4 but all items weigh more than 4
+        # and we require profit >= 1 (need at least one item)
+        satisfy(Knapsack(x, weights=weights, wlimit=4, profits=profits) >= 1)
+
+        status = solve(solver="ortools")
+        assert status == UNSAT
+
+    def test_knapsack_multi_copy(self):
+        """Test Knapsack with multiple copies of items."""
+        # Allow up to 3 copies of each item
+        x = VarArray(size=3, dom=range(4))
+        weights = [2, 3, 4]
+        profits = [3, 4, 5]
+        capacity = 10
+
+        satisfy(Knapsack(x, weights=weights, wlimit=capacity, profits=profits) >= 12)
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        total_weight = sum(w * s for w, s in zip(weights, sol))
+        total_profit = sum(p * s for p, s in zip(profits, sol))
+
+        assert total_weight <= capacity
+        assert total_profit >= 12
