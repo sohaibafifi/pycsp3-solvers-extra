@@ -798,8 +798,8 @@ class Z3Callbacks(BaseCallbacks):
         else:
             self._add_constraint(Or([state_vars[n] == f for f in int_finals]))
 
-        # Build transition constraints
-        # Group transitions by (src_state, symbol) for efficiency
+        # Build transition constraints using implications
+        # Group transitions by (src_state, symbol) -> [dst_states]
         transition_map: dict[tuple[int, int], list[int]] = {}
         for src, symbol, dst in transitions:
             key = (state_to_int[src], symbol)
@@ -807,20 +807,25 @@ class Z3Callbacks(BaseCallbacks):
                 transition_map[key] = []
             transition_map[key].append(state_to_int[dst])
 
-        # For each position, constrain transitions
+        # Get all valid (src, symbol) pairs
+        valid_pairs = set(transition_map.keys())
+
+        # For each position, constrain transitions using implications
         for i in range(n):
-            # Collect all valid transitions for this position
-            valid_transitions = []
+            # 1. For each valid (src, symbol) -> [dsts], add implication
             for (src_int, symbol), dst_list in transition_map.items():
-                for dst_int in dst_list:
-                    valid_transitions.append(
-                        And(
-                            state_vars[i] == src_int,
-                            vars_list[i] == symbol,
-                            state_vars[i + 1] == dst_int,
-                        )
-                    )
-            self._add_constraint(Or(valid_transitions))
+                condition = And(state_vars[i] == src_int, vars_list[i] == symbol)
+                if len(dst_list) == 1:
+                    self._add_constraint(Implies(condition, state_vars[i + 1] == dst_list[0]))
+                else:
+                    self._add_constraint(Implies(condition, Or([state_vars[i + 1] == d for d in dst_list])))
+
+            # 2. Ensure (state[i], x[i]) is a valid pair
+            valid_pair_constraints = [
+                And(state_vars[i] == src, vars_list[i] == sym)
+                for src, sym in valid_pairs
+            ]
+            self._add_constraint(Or(valid_pair_constraints))
 
         self._log(2, f"Added Regular constraint with {len(transitions)} transitions (decomposed)")
 
