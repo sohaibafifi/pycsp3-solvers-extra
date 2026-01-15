@@ -43,8 +43,9 @@ class ORToolsCallbacks(BaseCallbacks):
         sols: int | str | None = None,
         verbose: int = 0,
         options: str = "",
+        hints: dict[str, int] | None = None,
     ):
-        super().__init__(time_limit, sols, verbose, options)
+        super().__init__(time_limit, sols, verbose, options, hints)
 
         # OR-Tools model and solver
         self.model = cp_model.CpModel()
@@ -1477,6 +1478,19 @@ class ORToolsCallbacks(BaseCallbacks):
         self._log(1, f"Set {obj_type} maximization objective")
 
     # ========== Solving ==========
+
+    def apply_hints(self):
+        """Apply warm start hints using OR-Tools AddHint."""
+        if not self.hints:
+            return
+        applied = 0
+        for var_id, value in self.hints.items():
+            if var_id in self.vars:
+                self.model.AddHint(self.vars[var_id], value)
+                applied += 1
+            else:
+                self._log(2, f"Hint for unknown variable '{var_id}' ignored")
+        self._log(1, f"Applied {applied} warm start hints")
 
     def solve(self) -> TypeStatus:
         """Solve the model and return status."""

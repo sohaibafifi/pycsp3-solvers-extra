@@ -63,8 +63,9 @@ class Z3Callbacks(BaseCallbacks):
         sols: int | str | None = None,
         verbose: int = 0,
         options: str = "",
+        hints: dict[str, int] | None = None,
     ):
-        super().__init__(time_limit, sols, verbose, options)
+        super().__init__(time_limit, sols, verbose, options, hints)
 
         # Constraint storage (added to solver in solve())
         self._constraints: list[BoolRef] = []
@@ -1304,6 +1305,15 @@ class Z3Callbacks(BaseCallbacks):
         self._log(1, f"Set {obj_type} maximization objective")
 
     # ========== Solving ==========
+
+    def apply_hints(self):
+        """Apply warm start hints - Z3 has no native support, log warning."""
+        if not self.hints:
+            return
+        # Count valid hints for logging
+        valid = sum(1 for var_id in self.hints if var_id in self.vars)
+        if valid > 0:
+            self._log(1, f"Z3 does not support warm start hints ({valid} hints ignored)")
 
     def solve(self) -> TypeStatus:
         """Solve the model and return status."""

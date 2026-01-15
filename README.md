@@ -64,6 +64,24 @@ status = solve(solver="ace")
 print([v.value for v in x])
 ```
 
+### Warm Start (Solution Hints)
+
+Provide hints from a previous solution to guide the solver search:
+
+```python
+from pycsp3 import *
+from pycsp3_solvers_extra import solve
+
+x = VarArray(size=4, dom=range(10))
+satisfy(AllDifferent(x))
+
+# Provide hints as {var_id: value}
+hints = {'x[0]': 5, 'x[1]': 2, 'x[2]': 8, 'x[3]': 1}
+status = solve(solver='ortools', hints=hints)
+```
+
+Warm start is supported by OR-Tools, CPO, and ACE/Choco. Z3 does not support hints natively.
+
 ### Loading XCSP3 instances
 
 ```python
@@ -81,11 +99,12 @@ print(solution())
 
 ```python
 solve(
-    solver="ortools",  # "ortools", "z3", or "cpo"
+    solver="ortools",  # "ortools", "z3", "cpo", "ace", or "choco"
     time_limit=None,   # seconds
     sols=None,         # number of solutions to find
     verbose=0,         # verbosity level (0-2)
-    options=""         # solver-specific options
+    options="",        # solver-specific options
+    hints=None         # warm start hints as {var_id: value}
 )
 ```
 

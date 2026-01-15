@@ -131,8 +131,9 @@ class CPOCallbacks(BaseCallbacks):
         sols: int | str | None = None,
         verbose: int = 0,
         options: str = "",
+        hints: dict[str, int] | None = None,
     ):
-        super().__init__(time_limit, sols, verbose, options)
+        super().__init__(time_limit, sols, verbose, options, hints)
 
         if not CPO_AVAILABLE:
             raise ImportError(
@@ -1083,6 +1084,23 @@ class CPOCallbacks(BaseCallbacks):
         self._log(2, f"Set {'minimize' if minimize else 'maximize'} objective ({obj_type})")
 
     # ========== Solving ==========
+
+    def apply_hints(self):
+        """Apply warm start hints using CPO starting point."""
+        if not self.hints:
+            return
+        from docplex.cp.solution import CpoModelSolution
+        stp = CpoModelSolution()
+        applied = 0
+        for var_id, value in self.hints.items():
+            if var_id in self.vars:
+                stp.add_var_solution(modeler.var_solution(self.vars[var_id], value))
+                applied += 1
+            else:
+                self._log(2, f"Hint for unknown variable '{var_id}' ignored")
+        if applied > 0:
+            self.model.set_starting_point(stp)
+            self._log(1, f"Applied {applied} warm start hints")
 
     def solve(self) -> TypeStatus:
         """Solve the model and return status."""

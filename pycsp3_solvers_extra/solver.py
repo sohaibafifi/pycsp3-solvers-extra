@@ -2,7 +2,7 @@
 Main solve() function for pycsp3-solvers-extra.
 
 This module provides the entry point for solving pycsp3 models
-with alternative solver backends (OR-Tools, CPO).
+with alternative solver backends (OR-Tools, CPO, Z3).
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ def solve(
     sols: int | str | None = None,
     verbose: int = 0,
     options: str = "",
+    hints: dict[str, int] | None = None,
 ) -> TypeStatus:
     """
     Solve the current pycsp3 model with the specified solver.
@@ -50,12 +51,13 @@ def solve(
     For "ortools" and "cpo", it uses the callback-based XCSP3 translation.
 
     Args:
-        solver: Solver name - "ortools", "cpo", "ace", or "choco"
+        solver: Solver name - "ortools", "cpo", "z3", "ace", or "choco"
         filename: Path to XCSP3 file. If None, compiles current model.
         time_limit: Time limit in seconds (None for no limit)
         sols: Number of solutions to find. Use "all" or pycsp3.ALL for all solutions.
         verbose: Verbosity level (0=quiet, 1=normal, 2=detailed)
         options: Solver-specific options string
+        hints: Warm start hints as {var_id: value} dict. Guides solver search.
 
     Returns:
         TypeStatus: SAT, UNSAT, OPTIMUM, or UNKNOWN
@@ -75,7 +77,7 @@ def solve(
 
     # Delegate native solvers to pycsp3
     if solver_lower in NATIVE_SOLVERS:
-        return _solve_native(solver_lower, filename, time_limit, sols, verbose, options)
+        return _solve_native(solver_lower, filename, time_limit, sols, verbose, options, hints)
 
     # Handle extra solvers
     if solver_lower not in EXTRA_SOLVERS:
@@ -83,7 +85,7 @@ def solve(
             f"Unknown solver: {solver}. Supported solvers: {supported_solvers()}"
         )
 
-    return _solve_extra(solver_lower, filename, time_limit, sols, verbose, options)
+    return _solve_extra(solver_lower, filename, time_limit, sols, verbose, options, hints)
 
 
 def _solve_native(
@@ -93,6 +95,7 @@ def _solve_native(
     sols: int | str | None,
     verbose: int,
     options: str,
+    hints: dict[str, int] | None,
 ) -> TypeStatus:
     """Delegate to pycsp3's native solve() for ACE/Choco."""
     from pycsp3 import ACE, CHOCO, ALL
@@ -118,6 +121,15 @@ def _solve_native(
             solver_str += ",limit=[" + ",".join(limit_parts) + "]"
     solver_str += "]"
 
+    # Add warm start hints for ACE/Choco
+    if hints:
+        # Format: var=value var=value ...
+        warm_str = " ".join(f"{var_id}={value}" for var_id, value in hints.items())
+        if options:
+            options = f"{options} -warm='{warm_str}'"
+        else:
+            options = f"-warm='{warm_str}'"
+
     return pycsp3_solve(
         solver=solver_str,
         options=options,
@@ -133,6 +145,7 @@ def _solve_extra(
     sols: int | str | None,
     verbose: int,
     options: str,
+    hints: dict[str, int] | None,
 ) -> TypeStatus:
     """Solve with extra backends (OR-Tools, CPO) using XCSP3 parsing."""
     # Get the appropriate backend
@@ -174,6 +187,7 @@ def _solve_extra(
             sols=sols,
             verbose=verbose,
             options=options,
+            hints=hints,
         )
 
         from pycsp3_solvers_extra.transforms import TransformingCallbacks
@@ -191,6 +205,9 @@ def _solve_extra(
         # Create callbacker to invoke callbacks
         callbacker = CallbackerXCSP3(parser, callbacks)
         callbacker.load_instance()
+
+        # Apply warm start hints after model is built
+        callbacks.apply_hints()
 
         if verbose > 0:
             print(f"Now the file is parsed, starting solving with {solver}...")

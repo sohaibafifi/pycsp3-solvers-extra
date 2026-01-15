@@ -55,6 +55,7 @@ class BaseCallbacks(Callbacks):
         sols: int | str | None = None,
         verbose: int = 0,
         options: str = "",
+        hints: dict[str, int] | None = None,
     ):
         super().__init__()
         self.print_general_methods = False
@@ -74,6 +75,7 @@ class BaseCallbacks(Callbacks):
         self.sols = sols
         self.verbose = verbose
         self.options = options
+        self.hints = hints or {}
 
         # Variable mapping: pycsp3 var id -> solver var
         self.vars: dict[str, Any] = {}
@@ -106,6 +108,18 @@ class BaseCallbacks(Callbacks):
     def get_objective_value(self):
         """Return the objective value from the last solve, if any."""
         return self._objective_value
+
+    def apply_hints(self):
+        """
+        Apply warm start hints to the solver model.
+
+        Called after the model is built (all variables and constraints added)
+        but before solve(). Subclasses should override to implement
+        solver-specific hint application.
+
+        The hints dict maps variable IDs to suggested values.
+        """
+        pass  # Default: no-op. Override in subclasses.
 
     # ========== Expression tree translation ==========
 
