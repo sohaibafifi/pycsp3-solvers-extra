@@ -33,6 +33,16 @@ def supported_solvers() -> list[str]:
     return sorted(NATIVE_SOLVERS | EXTRA_SOLVERS)
 
 
+def _resolve_output_dir(output_dir: str | os.PathLike | None) -> str:
+    if output_dir is None:
+        output_dir = tempfile.gettempdir()
+    output_dir = os.fspath(output_dir)
+    if output_dir == "":
+        output_dir = tempfile.gettempdir()
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
+
 def solve(
     *,
     solver: str = "ortools",
@@ -42,6 +52,7 @@ def solve(
     verbose: int = 0,
     options: str = "",
     hints: dict[str, int] | None = None,
+    output_dir: str | os.PathLike | None = None,
 ) -> TypeStatus:
     """
     Solve the current pycsp3 model with the specified solver.
@@ -58,6 +69,9 @@ def solve(
         verbose: Verbosity level (0=quiet, 1=normal, 2=detailed)
         options: Solver-specific options string
         hints: Warm start hints as {var_id: value} dict. Guides solver search.
+        output_dir: Directory for generated XCSP3/log files when compiling models.
+            Defaults to the system temp directory. Ignored when filename is provided
+            (for extra solvers, filename is treated as an XCSP3 input file).
 
     Returns:
         TypeStatus: SAT, UNSAT, OPTIMUM, or UNKNOWN
@@ -77,7 +91,16 @@ def solve(
 
     # Delegate native solvers to pycsp3
     if solver_lower in NATIVE_SOLVERS:
-        return _solve_native(solver_lower, filename, time_limit, sols, verbose, options, hints)
+        return _solve_native(
+            solver_lower,
+            filename,
+            time_limit,
+            sols,
+            verbose,
+            options,
+            hints,
+            output_dir,
+        )
 
     # Handle extra solvers
     if solver_lower not in EXTRA_SOLVERS:
@@ -85,7 +108,16 @@ def solve(
             f"Unknown solver: {solver}. Supported solvers: {supported_solvers()}"
         )
 
-    return _solve_extra(solver_lower, filename, time_limit, sols, verbose, options, hints)
+    return _solve_extra(
+        solver_lower,
+        filename,
+        time_limit,
+        sols,
+        verbose,
+        options,
+        hints,
+        output_dir,
+    )
 
 
 def _solve_native(
@@ -96,6 +128,7 @@ def _solve_native(
     verbose: int,
     options: str,
     hints: dict[str, int] | None,
+    output_dir: str | os.PathLike | None,
 ) -> TypeStatus:
     """Delegate to pycsp3's native solve() for ACE/Choco."""
     from pycsp3 import ACE, CHOCO, ALL
@@ -130,10 +163,14 @@ def _solve_native(
         else:
             options = f"-warm='{warm_str}'"
 
+    compile_target = filename
+    if compile_target is None:
+        compile_target = _resolve_output_dir(output_dir)
+
     return pycsp3_solve(
         solver=solver_str,
         options=options,
-        filename=filename,
+        filename=compile_target,
         verbose=-1,
     )
 
@@ -146,6 +183,7 @@ def _solve_extra(
     verbose: int,
     options: str,
     hints: dict[str, int] | None,
+    output_dir: str | os.PathLike | None,
 ) -> TypeStatus:
     """Solve with extra backends (OR-Tools, CPO) using XCSP3 parsing."""
     # Get the appropriate backend
@@ -158,9 +196,10 @@ def _solve_extra(
 
     # Compile to XCSP3 if no filename provided
     if filename is None:
+        tmp_dir = _resolve_output_dir(output_dir)
         # Use a temporary file for the XCSP3 instance
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".xml", delete=False
+            mode="w", suffix=".xml", delete=False, dir=tmp_dir
         ) as tmp:
             tmp_filename = tmp.name
 

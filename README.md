@@ -104,7 +104,8 @@ solve(
     sols=None,         # number of solutions to find
     verbose=0,         # verbosity level (0-2)
     options="",        # solver-specific options
-    hints=None         # warm start hints as {var_id: value}
+    hints=None,        # warm start hints as {var_id: value}
+    output_dir=None    # directory for generated XCSP3/log files (defaults to temp)
 )
 ```
 
