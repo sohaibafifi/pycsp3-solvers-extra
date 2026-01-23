@@ -856,6 +856,67 @@ class PumpkinCallbacks(BaseCallbacks):
 
         self._log(2, f"Added Ordered constraint with {operator}")
 
+    def ctr_lex(self, lists: list[list[Variable]], operator: TypeOrderedOperator):
+        """Lexicographic constraint on lists."""
+        def to_int_expr(value: Any) -> Any:
+            if isinstance(value, int):
+                return self.model.new_integer_variable(value, value, name="const")
+            return value
+
+        def add_lex_pair(vars1: list[Any], vars2: list[Any], strict: bool) -> None:
+            if len(vars1) != len(vars2):
+                raise ValueError("Lex constraint requires lists of equal length")
+            if not vars1:
+                return
+
+            cases: list[Any] = []
+            for i in range(len(vars1)):
+                case = self.model.new_boolean_variable(name=f"lex_case_{i}")
+                cases.append(case)
+                for j in range(i):
+                    self.model.add_implication(
+                        constraints.BinaryEquals(vars1[j], vars2[j], self._new_tag()),
+                        case,
+                    )
+                self.model.add_implication(
+                    constraints.BinaryLessThan(vars1[i], vars2[i], self._new_tag()),
+                    case,
+                )
+
+            if not strict:
+                all_equal = self.model.new_boolean_variable(name="lex_case_eq")
+                for j in range(len(vars1)):
+                    self.model.add_implication(
+                        constraints.BinaryEquals(vars1[j], vars2[j], self._new_tag()),
+                        all_equal,
+                    )
+                cases.append(all_equal)
+
+            self.model.add_constraint(constraints.Clause(cases, self._new_tag()))
+
+        increasing = operator in (
+            TypeOrderedOperator.INCREASING,
+            TypeOrderedOperator.STRICTLY_INCREASING,
+        )
+        strict = operator in (
+            TypeOrderedOperator.STRICTLY_INCREASING,
+            TypeOrderedOperator.STRICTLY_DECREASING,
+        )
+
+        for i in range(len(lists) - 1):
+            vars1 = [to_int_expr(v) for v in self._get_pumpkin_var_list(lists[i])]
+            vars2 = [to_int_expr(v) for v in self._get_pumpkin_var_list(lists[i + 1])]
+            if increasing:
+                add_lex_pair(vars1, vars2, strict)
+            else:
+                add_lex_pair(vars2, vars1, strict)
+
+        self._log(2, f"Added Lex constraint on {len(lists)} lists")
+
+    def ctr_lex_matrix(self, matrix: list[list[Variable]], operator: TypeOrderedOperator):
+        """Lexicographic constraint on matrix rows."""
+        self.ctr_lex(matrix, operator)
+
     # ========== Objective ==========
 
     def obj_minimize(self, term: Variable | Node):

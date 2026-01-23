@@ -149,6 +149,82 @@ class TestMinMaxConstraints:
         assert max(sol) == 7
 
 
+class TestOrderingConstraints:
+    """Tests for ordering constraints."""
+
+    def test_increasing(self):
+        """Test Increasing constraint."""
+        x = VarArray(size=4, dom=range(1, 10))
+        satisfy(Increasing(x))
+
+        status = solve(solver="pumpkin")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        for i in range(len(sol) - 1):
+            assert sol[i] <= sol[i + 1]
+
+    def test_strictly_increasing(self):
+        """Test Strictly Increasing constraint."""
+        x = VarArray(size=4, dom=range(1, 10))
+        satisfy(Increasing(x, strict=True))
+
+        status = solve(solver="pumpkin")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        for i in range(len(sol) - 1):
+            assert sol[i] < sol[i + 1]
+
+    def test_decreasing(self):
+        """Test Decreasing constraint."""
+        x = VarArray(size=4, dom=range(1, 10))
+        satisfy(Decreasing(x))
+
+        status = solve(solver="pumpkin")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        for i in range(len(sol) - 1):
+            assert sol[i] >= sol[i + 1]
+
+    def test_increasing_with_lengths(self):
+        """Test Increasing constraint with offsets."""
+        x = VarArray(size=3, dom=range(10))
+        offsets = [2, 3]
+        satisfy(Increasing(x, lengths=offsets))
+
+        status = solve(solver="pumpkin")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        assert sol[0] + offsets[0] <= sol[1]
+        assert sol[1] + offsets[1] <= sol[2]
+
+
+class TestCircuitConstraint:
+    """Tests for Circuit constraint."""
+
+    def test_circuit(self):
+        """Test Circuit constraint (Hamiltonian cycle)."""
+        n = 5
+        x = VarArray(size=n, dom=range(n))
+        satisfy(Circuit(x))
+
+        status = solve(solver="pumpkin")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        visited = set()
+        current = 0
+        for _ in range(n):
+            assert current not in visited, "Revisited node"
+            visited.add(current)
+            current = sol[current]
+        assert current == 0, "Not a cycle"
+        assert len(visited) == n, "Not all nodes visited"
+
+
 class TestAllEqual:
     """Tests for AllEqual and NotAllEqual constraints."""
 
@@ -203,6 +279,48 @@ class TestIntensionConstraints:
 
         sol_x, sol_y = value(x), value(y)
         assert sol_x * 2 + sol_y == 15
+
+
+class TestLexConstraint:
+    """Tests for Lex constraint."""
+
+    def test_lex_increasing(self):
+        """Test Lex constraint with increasing order."""
+        x = VarArray(size=3, dom=range(5))
+        y = VarArray(size=3, dom=range(5))
+        satisfy(LexIncreasing(x, y))
+
+        status = solve(solver="pumpkin")
+        assert status in (SAT, OPTIMUM)
+
+        sol_x = values(x)
+        sol_y = values(y)
+        assert tuple(sol_x) <= tuple(sol_y)
+
+    def test_lex_strict_increasing(self):
+        """Test Lex constraint with strict increasing order."""
+        x = VarArray(size=3, dom=range(3))
+        y = VarArray(size=3, dom=range(3))
+        satisfy(LexIncreasing(x, y, strict=True))
+
+        status = solve(solver="pumpkin")
+        assert status in (SAT, OPTIMUM)
+
+        sol_x = values(x)
+        sol_y = values(y)
+        assert tuple(sol_x) < tuple(sol_y)
+
+    def test_lex_matrix(self):
+        """Test Lex constraint with matrix rows."""
+        matrix = VarArray(size=[2, 3], dom=range(4))
+        satisfy(LexIncreasing(matrix, matrix=True))
+
+        status = solve(solver="pumpkin")
+        assert status in (SAT, OPTIMUM)
+
+        row0 = values(matrix[0])
+        row1 = values(matrix[1])
+        assert tuple(row0) <= tuple(row1)
 
 
 class TestCumulativeConstraint:
