@@ -47,7 +47,7 @@ from pycsp3.classes.auxiliary.enums import (
 from pycsp3.classes.main.variables import Variable
 from pycsp3.classes.nodes import Node, TypeNode
 
-from pycsp3_solvers_extra.backends.base import BaseCallbacks
+from pycsp3_solvers_extra.backends.base import BaseCallbacks, log_constraint
 
 
 class Z3Callbacks(BaseCallbacks):
@@ -357,12 +357,13 @@ class Z3Callbacks(BaseCallbacks):
 
     # ========== Constraint callbacks ==========
 
+    @log_constraint()
     def ctr_intension(self, scope: list[Variable], tree: Node):
         """Add intension constraint (boolean expression tree)."""
         expr = self.translate_node(tree)
         self._add_constraint(expr)
-        self._log(2, f"Added intension constraint on {len(scope)} vars")
 
+    @log_constraint(message=lambda x, values, positive, flags: f"Added {'positive' if positive else 'negative'} unary extension on {x.id}")
     def ctr_extension_unary(
         self, x: Variable, values: list[int], positive: bool, flags: set[str]
     ):
@@ -379,10 +380,8 @@ class Z3Callbacks(BaseCallbacks):
             self._add_constraint(Or([var == v for v in expanded]))
         else:
             self._add_constraint(And([var != v for v in expanded]))
-        self._log(
-            2, f"Added {'positive' if positive else 'negative'} unary extension on {x.id}"
-        )
 
+    @log_constraint(message=lambda scope, tuples, positive, flags: f"Added {'positive' if positive else 'negative'} extension on {len(scope)} vars with {len(tuples)} tuples")
     def ctr_extension(
         self, scope: list[Variable], tuples: list, positive: bool, flags: set[str]
     ):
@@ -403,11 +402,7 @@ class Z3Callbacks(BaseCallbacks):
                 tuple_constraint = And([v == val for v, val in zip(vars_list, t)])
                 self._add_constraint(Not(tuple_constraint))
 
-        self._log(
-            2,
-            f"Added {'positive' if positive else 'negative'} extension on {len(scope)} vars with {len(tuples)} tuples",
-        )
-
+    @log_constraint()
     def ctr_all_different(
         self, scope: list[Variable] | list[Node], excepting: None | list[int]
     ):
@@ -418,7 +413,6 @@ class Z3Callbacks(BaseCallbacks):
         if excepting is None or len(excepting) == 0:
             # Z3's native Distinct is very efficient
             self._add_constraint(Distinct(*exprs))
-            self._log(2, f"Added AllDifferent on {n} vars")
             return
 
         excepting_set = set(excepting)

@@ -16,7 +16,7 @@ from pycsp3.classes.auxiliary.enums import TypeStatus, TypeConditionOperator, Ty
 from pycsp3.classes.auxiliary.conditions import Condition
 from pycsp3.classes.nodes import Node
 
-from pycsp3_solvers_extra.backends.base import BaseCallbacks
+from pycsp3_solvers_extra.backends.base import BaseCallbacks, log_constraint
 
 from pycsp3.classes.main.variables import Variable
 from pycsp3.classes.nodes import TypeNode
@@ -390,12 +390,13 @@ class CPOCallbacks(BaseCallbacks):
 
     # ========== Constraint callbacks ==========
 
+    @log_constraint()
     def ctr_intension(self, scope: list[Variable], tree: Node):
         """Add intension constraint."""
         expr = self.translate_node(tree)
         self.model.add(expr)
-        self._log(2, f"Added intension constraint on {len(scope)} vars")
 
+    @log_constraint(message=lambda x, values, positive, flags: f"Added {'positive' if positive else 'negative'} unary extension")
     def ctr_extension_unary(self, x: Variable, values: list[int], positive: bool, flags: set[str]):
         """Unary table constraint."""
         var = self.vars[x.id]
@@ -409,8 +410,8 @@ class CPOCallbacks(BaseCallbacks):
             self.model.add(modeler.allowed_assignments(var, expanded))
         else:
             self.model.add(modeler.forbidden_assignments(var, expanded))
-        self._log(2, f"Added {'positive' if positive else 'negative'} unary extension")
 
+    @log_constraint(message=lambda scope, tuples, positive, flags: f"Added {'positive' if positive else 'negative'} extension on {len(scope)} vars")
     def ctr_extension(self, scope: list[Variable], tuples: list, positive: bool, flags: set[str]):
         """Table constraint."""
         vars_list = self._get_var_list(scope)
@@ -418,13 +419,12 @@ class CPOCallbacks(BaseCallbacks):
             self.model.add(modeler.allowed_assignments(vars_list, tuples))
         else:
             self.model.add(modeler.forbidden_assignments(vars_list, tuples))
-        self._log(2, f"Added {'positive' if positive else 'negative'} extension on {len(scope)} vars")
 
+    @log_constraint()
     def ctr_instantiation(self, lst: list[Variable], values: list[int]):
         """Instantiation constraint (fix variables to values)."""
         for var, val in zip(lst, values):
             self.model.add(self.vars[var.id] == val)
-        self._log(2, f"Added Instantiation constraint on {len(lst)} vars")
 
     def _binpacking_bins(self, lst: list[Variable], bin_count: int | None = None):
         min_val = min(v.dom.smallest_value() for v in lst)
@@ -450,6 +450,7 @@ class CPOCallbacks(BaseCallbacks):
                 loads.append(self.model.integer_var(0, max(0, ub), f"_binload_{i}"))
         return loads
 
+    @log_constraint()
     def ctr_binpacking(self, lst: list[Variable], sizes: list[int], condition: Condition):
         """BinPacking with a single condition on each bin load."""
         bins, bin_count = self._binpacking_bins(lst)
@@ -457,8 +458,8 @@ class CPOCallbacks(BaseCallbacks):
         self.model.add(modeler.pack(loads, bins, sizes))
         for load in loads:
             self._apply_condition(load, condition)
-        self._log(2, f"Added BinPacking constraint with condition")
 
+    @log_constraint()
     def ctr_binpacking_limits(self, lst: list[Variable], sizes: list[int], limits: list[int] | list[Variable]):
         """BinPacking with per-bin limits."""
         bins, _ = self._binpacking_bins(lst, bin_count=len(limits))
@@ -467,15 +468,15 @@ class CPOCallbacks(BaseCallbacks):
         for load, limit in zip(loads, limits):
             bound = self.vars[limit.id] if isinstance(limit, Variable) else int(limit)
             self.model.add(load <= bound)
-        self._log(2, f"Added BinPacking constraint with limits")
 
+    @log_constraint()
     def ctr_binpacking_loads(self, lst: list[Variable], sizes: list[int], loads: list[int] | list[Variable]):
         """BinPacking with explicit load variables."""
         bins, _ = self._binpacking_bins(lst, bin_count=len(loads))
         load_vars = [self.vars[v.id] if isinstance(v, Variable) else int(v) for v in loads]
         self.model.add(modeler.pack(load_vars, bins, sizes))
-        self._log(2, f"Added BinPacking constraint with loads")
 
+    @log_constraint()
     def ctr_binpacking_conditions(self, lst: list[Variable], sizes: list[int], conditions: list[Condition]):
         """BinPacking with per-bin conditions."""
         bins, bin_count = self._binpacking_bins(lst, bin_count=len(conditions))
@@ -483,8 +484,8 @@ class CPOCallbacks(BaseCallbacks):
         self.model.add(modeler.pack(loads, bins, sizes))
         for load, condition in zip(loads, conditions):
             self._apply_condition(load, condition)
-        self._log(2, f"Added BinPacking constraint with conditions")
 
+    @log_constraint(message=lambda lst, weights, wcondition, profits, pcondition: f"Added Knapsack constraint on {len(lst)} items")
     def ctr_knapsack(
         self,
         lst: list[Variable],
@@ -504,8 +505,7 @@ class CPOCallbacks(BaseCallbacks):
         profit_sum = modeler.scal_prod(selection, profits)
         self._apply_condition(profit_sum, pcondition)
 
-        self._log(2, f"Added Knapsack constraint on {len(lst)} items")
-
+    @log_constraint(message=lambda scope, excepting: f"Added AllDifferent on {len(scope)} vars except {excepting} ({'global' if scope and any(item.dom and any(v in item.dom.all_values() if hasattr(item.dom, 'all_values') else []) for v in excepting or []) else ''} ... )")
     def ctr_all_different(self, scope: list[Variable] | list[Node], excepting: None | list[int]):
         """AllDifferent constraint."""
         exprs = self._get_var_or_node_list(scope)
@@ -513,7 +513,6 @@ class CPOCallbacks(BaseCallbacks):
 
         if excepting is None or len(excepting) == 0:
             self.model.add(modeler.all_diff(exprs))
-            self._log(2, f"Added AllDifferent on {n} vars")
             return
 
         excepting_set = set(excepting)
@@ -560,9 +559,7 @@ class CPOCallbacks(BaseCallbacks):
                 xj_except = modeler.logical_or([exprs[j] == v for v in excepting])
                 self.model.add(modeler.logical_or(exprs[i] != exprs[j], xi_except, xj_except))
 
-        self._log(2, f"Added AllDifferent on {n} vars except {excepting} "
-                     f"({len(cannot_be_excepted)} global, {len(can_be_excepted)} conditional)")
-
+    @log_constraint()
     def ctr_all_equal(self, scope: list[Variable] | list[Node], excepting: None | list[int]):
         """AllEqual constraint."""
         exprs = self._get_var_or_node_list(scope)
@@ -574,7 +571,6 @@ class CPOCallbacks(BaseCallbacks):
             for i in range(1, len(exprs)):
                 except_cond = modeler.logical_or([exprs[0] == v for v in excepting])
                 self.model.add(modeler.logical_or(exprs[0] == exprs[i], except_cond))
-        self._log(2, f"Added AllEqual on {len(scope)} vars")
 
     def ctr_sum(self, lst: list[Variable] | list[Node], coefficients: None | list[int] | list[Variable], condition: Condition):
         """Sum constraint."""
@@ -592,8 +588,8 @@ class CPOCallbacks(BaseCallbacks):
             sum_expr = modeler.sum(terms)
 
         self._apply_condition(sum_expr, condition)
-        self._log(2, f"Added Sum constraint")
 
+    @log_constraint()
     def ctr_count(self, lst: list[Variable] | list[Node], values: list[int] | list[Variable], condition: Condition):
         """Count constraint."""
         exprs = self._get_var_or_node_list(lst)
@@ -609,8 +605,8 @@ class CPOCallbacks(BaseCallbacks):
             count_expr = modeler.sum(count_exprs)
 
         self._apply_condition(count_expr, condition)
-        self._log(2, f"Added Count constraint")
 
+    @log_constraint(message=lambda present, condition: f"Added NValues constraint ({len(present)} values)")
     def ctr_nvalues(self, lst: list[Variable] | list[Node], excepting: None | list[int], condition: Condition):
         """NValues constraint: number of distinct values."""
         exprs = self._get_var_or_node_list(lst)
@@ -642,7 +638,6 @@ class CPOCallbacks(BaseCallbacks):
         # Early exit for trivial cases
         if not all_values or not exprs:
             self._apply_condition(0, condition)
-            self._log(2, "Added NValues constraint (trivial)")
             return
 
         # For each value, check if it appears
@@ -666,7 +661,6 @@ class CPOCallbacks(BaseCallbacks):
 
         nvalues_expr = modeler.sum(present) if present else 0
         self._apply_condition(nvalues_expr, condition)
-        self._log(2, f"Added NValues constraint ({len(present)} values)")
 
     def ctr_atleast(self, lst: list[Variable], value: int, k: int):
         """AtLeast constraint."""

@@ -2,7 +2,7 @@
 Main solve() function for pycsp3-solvers-extra.
 
 This module provides the entry point for solving pycsp3 models
-with alternative solver backends (OR-Tools, CPO, Z3).
+with alternative solver backends (OR-Tools, CPO, Z3, Glasgow, Pumpkin).
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 NATIVE_SOLVERS = {"ace", "choco"}
 
 # Solvers implemented by this package
-EXTRA_SOLVERS = {"ortools", "cpo", "z3"}
+EXTRA_SOLVERS = {"ortools", "cpo", "z3", "gcs", "pumpkin"}
 
 
 def supported_solvers() -> list[str]:

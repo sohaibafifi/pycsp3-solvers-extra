@@ -59,11 +59,25 @@ def _try_load_backend(name: str) -> None:
         except ImportError:
             _BACKENDS["z3"] = None
 
+    elif name == "gcs":
+        try:
+            from pycsp3_solvers_extra.backends.gcs_backend import GCSCallbacks, GCS_AVAILABLE
+            _BACKENDS["gcs"] = GCSCallbacks if GCS_AVAILABLE else None
+        except ImportError:
+            _BACKENDS["gcs"] = None
+
+    elif name == "pumpkin":
+        try:
+            from pycsp3_solvers_extra.backends.pumpkin_backend import PumpkinCallbacks, PUMPKIN_AVAILABLE
+            _BACKENDS["pumpkin"] = PumpkinCallbacks if PUMPKIN_AVAILABLE else None
+        except ImportError:
+            _BACKENDS["pumpkin"] = None
+
 
 def available_backends() -> list[str]:
     """Return list of available backend names."""
     # Try loading all known backends
-    for name in ["ortools", "cpo", "z3"]:
+    for name in ["ortools", "cpo", "z3", "gcs", "pumpkin"]:
         if name not in _BACKENDS:
             _try_load_backend(name)
 

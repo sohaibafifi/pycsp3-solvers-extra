@@ -7,6 +7,8 @@ Extension library that adds extra solver backends to [pycsp3](https://github.com
 - **OR-Tools CP-SAT** - Google's constraint programming solver
 - **IBM DOcplex CP Optimizer** - IBM's CP solver (requires CPLEX Studio)
 - **Z3** - Microsoft's SMT solver with optimization support
+- **Glasgow Constraint Solver** - CP solver with proof logging support
+- **Pumpkin** - Lazy clause generation CP solver written in Rust
 
 ## Installation
 
@@ -26,6 +28,12 @@ pip install pycsp3-solvers-extra[z3]
 # Install with CPO (requires IBM CPLEX Studio installed separately)
 pip install pycsp3-solvers-extra[cpo]
 
+# Install with Glasgow Constraint Solver
+pip install pycsp3-solvers-extra[gcs]
+
+# Install with Pumpkin
+pip install pycsp3-solvers-extra[pumpkin]
+
 # Install all backends
 pip install pycsp3-solvers-extra[all]
 ```
@@ -36,6 +44,8 @@ pip install pycsp3-solvers-extra[all]
 - `ortools` - for OR-Tools backend
 - `z3-solver` - for Z3 backend
 - `docplex` - for CPO backend (requires IBM CPLEX Studio installed separately)
+- `gcspy` - for Glasgow Constraint Solver backend
+- `pumpkin-solver` - for Pumpkin backend
 
 ## Usage
 
@@ -56,6 +66,12 @@ status = solve(solver="z3")
 
 # Or solve with CPO
 status = solve(solver="cpo")
+
+# Or solve with Glasgow Constraint Solver
+status = solve(solver="gcs")
+
+# Or solve with Pumpkin
+status = solve(solver="pumpkin")
 
 # Of course, you still can use the native supported pycsp3 solvers as well ('ace', 'choco')
 status = solve(solver="ace")
@@ -80,7 +96,7 @@ hints = {'x[0]': 5, 'x[1]': 2, 'x[2]': 8, 'x[3]': 1}
 status = solve(solver='ortools', hints=hints)
 ```
 
-Warm start is supported by OR-Tools, CPO, and ACE/Choco. Z3 does not support hints natively.
+Warm start is supported by OR-Tools, CPO, and ACE/Choco. Z3, GCS, and Pumpkin do not support hints natively.
 
 ### Loading XCSP3 instances
 
@@ -99,7 +115,7 @@ print(solution())
 
 ```python
 solve(
-    solver="ortools",  # "ortools", "z3", "cpo", "ace", or "choco"
+    solver="ortools",  # "ortools", "z3", "cpo", "gcs", "pumpkin", "ace", or "choco"
     time_limit=None,   # seconds
     sols=None,         # number of solutions to find
     verbose=0,         # verbosity level (0-2)

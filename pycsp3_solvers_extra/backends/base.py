@@ -7,7 +7,8 @@ Provides common utilities for translating XCSP3 elements to solver models.
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, TYPE_CHECKING
+from functools import wraps
+from typing import Any, TYPE_CHECKING, Callable
 
 from pycsp3.classes.auxiliary.conditions import Condition
 from pycsp3.classes.auxiliary.enums import (
@@ -27,6 +28,77 @@ from pycsp3.parser.callbacks import Callbacks
 if TYPE_CHECKING:
     from pycsp3_solvers_extra.transforms.context import TransformContext
     from pycsp3_solvers_extra.transforms.types import ConstraintCall
+
+
+def log_constraint(level: int = 2, message: str | Callable[..., str] | None = None):
+    """
+    Decorator to automatically log constraint method calls.
+
+    Args:
+        level: Log level (default: 2)
+        message: Log message as string or callable that receives method args.
+                  If None, infers method name from function name.
+
+    Example:
+        @log_constraint()
+        def ctr_all_different(self, scope, excepting):
+            # Logs: "Added AllDifferent on n vars"
+            pass
+
+        @log_constraint(message=lambda scope, excepting: f"Custom: {len(scope)} vars")
+        def ctr_sum(self, lst, coefficients, condition):
+            # Logs: "Custom: n vars"
+            pass
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            result = func(self, *args, **kwargs)
+
+            if self.verbose >= level:
+                msg = message(*args, **kwargs) if callable(message) else None
+
+                if msg is None:
+                    func_name = func.__name__
+                    if func_name.startswith('ctr_'):
+                        constraint_name = func_name[4:].replace('_', ' ')
+                        msg = f"Added {constraint_name}"
+
+                        try:
+                            if 'scope' in func.__code__.co_varnames:
+                                scope_idx = func.__code__.co_varnames.index('scope')
+                                if scope_idx < len(args):
+                                    scope = args[scope_idx]
+                                    n = len(scope) if hasattr(scope, '__len__') else '?'
+                                    msg += f" on {n} vars"
+                            elif 'lst' in func.__code__.co_varnames:
+                                lst_idx = func.__code__.co_varnames.index('lst')
+                                if lst_idx < len(args):
+                                    lst = args[lst_idx]
+                                    n = len(lst) if hasattr(lst, '__len__') else '?'
+                                    msg += f" on {n} items"
+                            elif 'origins' in func.__code__.co_varnames:
+                                origins_idx = func.__code__.co_varnames.index('origins')
+                                if origins_idx < len(args):
+                                    origins = args[origins_idx]
+                                    n = len(origins) if hasattr(origins, '__len__') else '?'
+                                    msg += f" on {n} intervals"
+                            elif 'lists' in func.__code__.co_varnames:
+                                lists_idx = func.__code__.co_varnames.index('lists')
+                                if lists_idx < len(args):
+                                    lists = args[lists_idx]
+                                    n = len(lists) if hasattr(lists, '__len__') else '?'
+                                    msg += f" on {n} lists"
+                        except Exception:
+                            pass
+                else:
+                    msg = message(*args, **kwargs) if callable(message) else message
+
+                print(msg)
+
+            return result
+        return wrapper
+    return decorator
 
 
 class BaseCallbacks(Callbacks):

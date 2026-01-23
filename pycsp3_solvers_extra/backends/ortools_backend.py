@@ -27,7 +27,7 @@ from pycsp3.classes.auxiliary.enums import (
 from pycsp3.classes.main.variables import Variable
 from pycsp3.classes.nodes import Node, TypeNode
 
-from pycsp3_solvers_extra.backends.base import BaseCallbacks
+from pycsp3_solvers_extra.backends.base import BaseCallbacks, log_constraint
 
 
 class ORToolsCallbacks(BaseCallbacks):
@@ -603,6 +603,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
     # ========== Constraint callbacks ==========
 
+    @log_constraint()
     def ctr_intension(self, scope: list[Variable], tree: Node):
         """Add intension constraint (boolean expression tree)."""
         expr = self.translate_node(tree)
@@ -613,8 +614,8 @@ class ORToolsCallbacks(BaseCallbacks):
         else:
             # It's a boolean expression (comparison result)
             self.model.Add(expr)
-        self._log(2, f"Added intension constraint on {len(scope)} vars")
 
+    @log_constraint(message=lambda x, values, positive, flags: f"Added {'positive' if positive else 'negative'} unary extension on {x.id}")
     def ctr_extension_unary(self, x: Variable, values: list[int], positive: bool, flags: set[str]):
         """Unary table constraint."""
         var = self.vars[x.id]
@@ -628,8 +629,8 @@ class ORToolsCallbacks(BaseCallbacks):
             self.model.AddAllowedAssignments([var], [[v] for v in expanded])
         else:
             self.model.AddForbiddenAssignments([var], [[v] for v in expanded])
-        self._log(2, f"Added {'positive' if positive else 'negative'} unary extension on {x.id}")
 
+    @log_constraint(message=lambda scope, tuples, positive, flags: f"Added {'positive' if positive else 'negative'} extension on {len(scope)} vars with {len(tuples)} tuples")
     def ctr_extension(self, scope: list[Variable], tuples: list, positive: bool, flags: set[str]):
         """Table constraint (allowed/forbidden assignments)."""
         vars_list = self._get_var_list(scope)
@@ -637,7 +638,6 @@ class ORToolsCallbacks(BaseCallbacks):
             self.model.AddAllowedAssignments(vars_list, tuples)
         else:
             self.model.AddForbiddenAssignments(vars_list, tuples)
-        self._log(2, f"Added {'positive' if positive else 'negative'} extension on {len(scope)} vars with {len(tuples)} tuples")
 
     def ctr_all_different(self, scope: list[Variable] | list[Node], excepting: None | list[int]):
         """AllDifferent constraint."""
@@ -709,6 +709,7 @@ class ORToolsCallbacks(BaseCallbacks):
         self._log(2, f"Added AllDifferent on {n} vars except {excepting} "
                      f"({len(cannot_be_excepted)} global, {len(can_be_excepted)} conditional)")
 
+    @log_constraint()
     def ctr_all_different_lists(self, lists: list[list[Variable]], excepting: None | list[list[int]]):
         """AllDifferent on lists (each list differs from others)."""
         # Each pair of lists must differ in at least one position
@@ -721,7 +722,6 @@ class ORToolsCallbacks(BaseCallbacks):
                     self.model.Add(self.vars[lists[i][k].id] != self.vars[lists[j][k].id]).OnlyEnforceIf(diff_var)
                     diff_vars.append(diff_var)
                 self.model.AddBoolOr(diff_vars)
-        self._log(2, f"Added AllDifferent on {len(lists)} lists")
 
     def ctr_all_equal(self, scope: list[Variable] | list[Node], excepting: None | list[int]):
         """AllEqual constraint."""
@@ -747,8 +747,7 @@ class ORToolsCallbacks(BaseCallbacks):
                     self.model.AddBoolAnd([xi_excepted.Not(), xj_excepted.Not()]).OnlyEnforceIf(both_not_excepted)
                     self.model.Add(exprs[i] == exprs[j]).OnlyEnforceIf(both_not_excepted)
 
-        self._log(2, f"Added AllEqual on {len(scope)} vars")
-
+    @log_constraint(message=lambda lst, coefficients, condition: f"Added Sum constraint on {len(lst)} terms with condition {condition.operator}")
     def ctr_sum(self, lst: list[Variable] | list[Node], coefficients: None | list[int] | list[Variable], condition: Condition):
         """Sum constraint with condition."""
         exprs = [self._as_bool_var(e) for e in self._get_var_or_node_list(lst)]
@@ -770,7 +769,6 @@ class ORToolsCallbacks(BaseCallbacks):
 
         # Apply condition
         self._apply_condition_to_model(sum_expr, condition)
-        self._log(2, f"Added Sum constraint on {len(lst)} terms with condition {condition.operator}")
 
     def ctr_count(self, lst: list[Variable] | list[Node], values: list[int] | list[Variable], condition: Condition):
         """Count constraint: count occurrences of values in lst."""
@@ -824,8 +822,8 @@ class ORToolsCallbacks(BaseCallbacks):
 
         count_sum = self._linear_sum(count_vars)
         self._apply_condition_to_model(count_sum, condition)
-        self._log(2, f"Added Count constraint")
 
+    @log_constraint(message=lambda lst, value, k: f"Added AtLeast constraint: at least {k} of value {value}")
     def ctr_atleast(self, lst: list[Variable], value: int, k: int):
         """AtLeast constraint: at least k occurrences of value in lst."""
         exprs = self._get_var_list(lst)
@@ -840,8 +838,8 @@ class ORToolsCallbacks(BaseCallbacks):
 
         # Sum of count_vars >= k
         self.model.Add(self._linear_sum(count_vars) >= k)
-        self._log(2, f"Added AtLeast constraint: at least {k} of value {value}")
 
+    @log_constraint(message=lambda lst, value, k: f"Added AtMost constraint: at most {k} of value {value}")
     def ctr_atmost(self, lst: list[Variable], value: int, k: int):
         """AtMost constraint: at most k occurrences of value in lst."""
         exprs = self._get_var_list(lst)
@@ -856,8 +854,8 @@ class ORToolsCallbacks(BaseCallbacks):
 
         # Sum of count_vars <= k
         self.model.Add(self._linear_sum(count_vars) <= k)
-        self._log(2, f"Added AtMost constraint: at most {k} of value {value}")
 
+    @log_constraint(message=lambda lst, value, k: f"Added Exactly constraint: exactly {k} of value {value}")
     def ctr_exactly(self, lst: list[Variable], value: int, k: int | Variable):
         """Exactly constraint: exactly k occurrences of value in lst."""
         exprs = self._get_var_list(lst)
@@ -876,7 +874,6 @@ class ORToolsCallbacks(BaseCallbacks):
             self.model.Add(self._linear_sum(count_vars) == k_var)
         else:
             self.model.Add(self._linear_sum(count_vars) == k)
-        self._log(2, f"Added Exactly constraint: exactly {k} of value {value}")
 
     def ctr_nvalues(self, lst: list[Variable] | list[Node], excepting: None | list[int], condition: Condition):
         """NValues constraint: number of distinct values."""
@@ -967,8 +964,7 @@ class ORToolsCallbacks(BaseCallbacks):
             nvalues = self._linear_sum(appears)
             self._apply_condition_to_model(nvalues, condition)
 
-        self._log(2, f"Added NValues constraint ({len(appears)} value indicators)")
-
+    @log_constraint(message=lambda appears, condition: f"Added NValues constraint ({len(appears)} value indicators)")
     def ctr_element(self, lst: list[Variable] | list[int], i: Variable, condition: Condition):
         """Element constraint: lst[i] satisfies condition."""
         index_var = self.vars[i.id]
@@ -987,8 +983,8 @@ class ORToolsCallbacks(BaseCallbacks):
             self.model.AddElement(index_var, vars_list, target)
 
         self._apply_condition_to_model(target, condition)
-        self._log(2, f"Added Element constraint")
 
+    @log_constraint()
     def ctr_minimum(self, lst: list[Variable] | list[Node], condition: Condition):
         """Minimum constraint."""
         exprs = self._get_var_or_node_list(lst)
@@ -999,8 +995,8 @@ class ORToolsCallbacks(BaseCallbacks):
         min_var = self.model.NewIntVar(lb, ub, "")
         self.model.AddMinEquality(min_var, exprs)
         self._apply_condition_to_model(min_var, condition)
-        self._log(2, f"Added Minimum constraint")
 
+    @log_constraint()
     def ctr_maximum(self, lst: list[Variable] | list[Node], condition: Condition):
         """Maximum constraint."""
         exprs = self._get_var_or_node_list(lst)
@@ -1011,8 +1007,8 @@ class ORToolsCallbacks(BaseCallbacks):
         max_var = self.model.NewIntVar(lb, ub, "")
         self.model.AddMaxEquality(max_var, exprs)
         self._apply_condition_to_model(max_var, condition)
-        self._log(2, f"Added Maximum constraint")
 
+    @log_constraint()
     def ctr_channel(self, lst1: list[Variable], lst2: None | list[Variable]):
         """Channel/Inverse constraint."""
         vars1 = self._get_var_list(lst1)
@@ -1022,8 +1018,8 @@ class ORToolsCallbacks(BaseCallbacks):
         else:
             vars2 = self._get_var_list(lst2)
             self.model.AddInverse(vars1, vars2)
-        self._log(2, f"Added Channel constraint")
 
+    @log_constraint(message=lambda lst, size: f"Added Circuit constraint on {len(lst)} nodes")
     def ctr_circuit(self, lst: list[Variable], size: None | int | Variable):
         """Circuit constraint (Hamiltonian cycle)."""
         vars_list = self._get_var_list(lst)
@@ -1045,8 +1041,6 @@ class ORToolsCallbacks(BaseCallbacks):
         if size is not None:
             # Size constraint on circuit - not standard, handle if needed
             pass
-
-        self._log(2, f"Added Circuit constraint on {n} nodes")
 
     def ctr_regular(
         self,
@@ -1079,8 +1073,8 @@ class ORToolsCallbacks(BaseCallbacks):
         int_finals = [state_to_int[s] for s in final_states]
 
         self.model.AddAutomaton(vars_list, int_start, int_finals, int_transitions)
-        self._log(2, f"Added Regular constraint with {len(transitions)} transitions")
 
+    @log_constraint(message=lambda pos, neg: f"Added Clause with {len(pos)} positive and {len(neg)} negative literals")
     def ctr_clause(self, pos: list[Variable], neg: list[Variable]):
         """Clause constraint (OR of positive and negated variables)."""
         literals = []
@@ -1089,7 +1083,6 @@ class ORToolsCallbacks(BaseCallbacks):
         for v in neg:
             literals.append(self.vars[v.id].Not())
         self.model.AddBoolOr(literals)
-        self._log(2, f"Added Clause with {len(pos)} positive and {len(neg)} negative literals")
 
     def ctr_nooverlap(self, origins: list[Variable], lengths: list[int] | list[Variable], zero_ignored: bool):
         """NoOverlap constraint (1D)."""
@@ -1115,8 +1108,8 @@ class ORToolsCallbacks(BaseCallbacks):
             intervals.append(interval)
 
         self.model.AddNoOverlap(intervals)
-        self._log(2, f"Added NoOverlap constraint on {n} intervals")
 
+    @log_constraint(message=lambda origins, lengths, heights, condition: f"Added Cumulative constraint on {len(origins)} tasks")
     def ctr_cumulative(self, origins: list[Variable], lengths: list[int] | list[Variable],
                        heights: list[int] | list[Variable], condition: Condition):
         """Cumulative constraint."""
@@ -1154,7 +1147,6 @@ class ORToolsCallbacks(BaseCallbacks):
         capacity = condition.value if isinstance(condition, ConditionValue) else self.vars[condition.variable.id]
 
         self.model.AddCumulative(intervals, demands, capacity)
-        self._log(2, f"Added Cumulative constraint on {n} tasks")
 
     def ctr_ordered(self, lst: list[Variable], operator: TypeOrderedOperator, lengths: None | list[int] | list[Variable]):
         """Ordered constraint."""
@@ -1177,8 +1169,29 @@ class ORToolsCallbacks(BaseCallbacks):
             elif operator == TypeOrderedOperator.DECREASING:
                 self.model.Add(vars_list[i] + offset >= vars_list[i + 1])
 
-        self._log(2, f"Added Ordered constraint with {operator}")
+    @log_constraint(message=lambda lst, operator, lengths: f"Added Ordered constraint with {operator}")
+    def ctr_ordered(self, lst: list[Variable], operator: TypeOrderedOperator, lengths: None | list[int] | list[Variable]):
+        """Ordered constraint."""
+        vars_list = self._get_var_list(lst)
 
+        for i in range(len(vars_list) - 1):
+            offset = 0
+            if lengths is not None:
+                if isinstance(lengths[i], int):
+                    offset = lengths[i]
+                else:
+                    offset = self.vars[lengths[i].id]
+
+            if operator == TypeOrderedOperator.STRICTLY_INCREASING:
+                self.model.Add(vars_list[i] + offset < vars_list[i + 1])
+            elif operator == TypeOrderedOperator.INCREASING:
+                self.model.Add(vars_list[i] + offset <= vars_list[i + 1])
+            elif operator == TypeOrderedOperator.STRICTLY_DECREASING:
+                self.model.Add(vars_list[i] + offset > vars_list[i + 1])
+            elif operator == TypeOrderedOperator.DECREASING:
+                self.model.Add(vars_list[i] + offset >= vars_list[i + 1])
+
+    @log_constraint()
     def ctr_lex(self, lists: list[list[Variable]], operator: TypeOrderedOperator):
         """Lexicographic constraint on lists."""
         # Encode lex with prefix equality reification; strict adds not-all-equal.
