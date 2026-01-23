@@ -7,7 +7,7 @@ so that no two queens attack each other.
 
 import time
 from pycsp3 import *
-from pycsp3_solvers_extra import solve
+from pycsp3_solvers_extra import solve, supported_solvers
 
 
 def print_board(solution: list[int]) -> None:
@@ -32,7 +32,7 @@ def main():
     parser = argparse.ArgumentParser(description="N-Queens Solver Comparison")
     parser.add_argument("-n", type=int, default=8, help="Board size (default: 8)")
     parser.add_argument("-v", "--verbose", type=int, default=0, help="Verbosity level")
-    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo", "z3"],
+    parser.add_argument("--solvers", nargs="+", default=supported_solvers(),
                         help="Solvers to compare")
     args = parser.parse_args()
 

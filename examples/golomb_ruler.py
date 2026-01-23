@@ -10,7 +10,7 @@ that has the minimum length.
 import time
 from itertools import combinations
 from pycsp3 import *
-from pycsp3_solvers_extra import solve
+from pycsp3_solvers_extra import solve, supported_solvers
 
 
 def print_ruler(solution: list[int]) -> None:
@@ -57,7 +57,7 @@ def main():
     parser.add_argument("-t", "--time-limit", type=float, default=60,
                         help="Time limit in seconds (default: 60)")
     parser.add_argument("-v", "--verbose", type=int, default=0, help="Verbosity level")
-    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo", "z3"],
+    parser.add_argument("--solvers", nargs="+", default=supported_solvers(),
                         help="Solvers to compare")
     args = parser.parse_args()
 

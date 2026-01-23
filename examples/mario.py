@@ -50,7 +50,7 @@ for solver in supported_solvers():
     )
 
     try:
-        status = solve(solver=solver)
+        status = solve(solver=solver, verbose=1)
         if status in [SAT, OPTIMUM]:
             print("Collected gold:", bound())
     except Exception as exc:

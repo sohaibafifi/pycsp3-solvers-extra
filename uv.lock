@@ -1,6 +1,6 @@
 version = 1
 revision = 1
-requires-python = ">=3.10, <=3.12"
+requires-python = ">=3.10, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12'",
     "python_full_version == '3.11.*'",
@@ -91,7 +91,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371 }
 wheels = [
@@ -378,6 +378,59 @@ wheels = [
 ]
 
 [[package]]
+name = "pumpkin-solver"
+version = "0.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/09/5c68f030f7fba3a4cef1d42983a1469534c3b06a016f7ef47321e7405300/pumpkin_solver-0.2.2.tar.gz", hash = "sha256:5855463f2371419868fdcd77d4f7449d0581cea27602901339848c678f921f7a", size = 685006 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c5/5f/6367074bab6cfef3f92dafa733773d32978b1d7d3ffc56b47afbf7fe5b04/pumpkin_solver-0.2.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:50b6d3f0494b83dd2d5da12c0340751a35f99af44b15421144ab77800c63ec62", size = 670332 },
+    { url = "https://files.pythonhosted.org/packages/76/1c/4c5023a7daa21a2e84974e8853eacf63fe99fb58ff1647ec9aa3fd11ec11/pumpkin_solver-0.2.2-cp310-cp310-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:bf40ce03fbc03616ffdef0957739548e594dc29926cebafc5812b564d90ec9ab", size = 700240 },
+    { url = "https://files.pythonhosted.org/packages/d6/54/02a0b8d4dc0533e0320b554da6e157fd6b5684f7a24a8a9d380bf48125f0/pumpkin_solver-0.2.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e94d63651b5827c98b7b5f6d142a1350bee1aed068159ac321095322f6bcd414", size = 715941 },
+    { url = "https://files.pythonhosted.org/packages/dc/fc/6b6ef0890e4c95cc2382fefba6525fbae02354f56e96782be77c5d884378/pumpkin_solver-0.2.2-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:b2307e24b8e1a1849df483537bd5da4f852945dc415568a1389effb5eaae3475", size = 737284 },
+    { url = "https://files.pythonhosted.org/packages/5d/f7/59e89a06490e3041e54172748253b7662bac02caef4340184eb1bca694b1/pumpkin_solver-0.2.2-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:39be5d5e03f1298b358c717de93f14b307b95e0dacd3955d1cc7522ceb0147d9", size = 853860 },
+    { url = "https://files.pythonhosted.org/packages/ac/7a/a13a842e2f52de5ccaa799bd00bcd8d0037fbcc7d06fa6c50c90f0616cad/pumpkin_solver-0.2.2-cp310-cp310-musllinux_1_2_armv7l.whl", hash = "sha256:ac1b570576b88e7e1ae097bc39593d93db6a27023e4eae1f6ddeb921dde15e3b", size = 967980 },
+    { url = "https://files.pythonhosted.org/packages/4f/a6/79a6661d8ef45bfabfc76dc36222039efad55509d9cd4dfdd641d82c4079/pumpkin_solver-0.2.2-cp310-cp310-musllinux_1_2_i686.whl", hash = "sha256:1152853d92569bab6d36299b22413e5fb8bbe2005b5c0a2add9d00acc842a6cb", size = 907388 },
+    { url = "https://files.pythonhosted.org/packages/aa/18/66ab7831ccc4d0f002736996758a2dfed2361efd5fdffb96a92f6b4e2db2/pumpkin_solver-0.2.2-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:443f54e8912d388554e88e35801888a6ae811b38f0c35537777d6f5ee2d25e0b", size = 892575 },
+    { url = "https://files.pythonhosted.org/packages/73/74/0c435c4c324f3e7b2975b31f37f827ed6b357203f917373503a1270ed3ac/pumpkin_solver-0.2.2-cp310-cp310-win_amd64.whl", hash = "sha256:855e2cac219fb0854f2282786699dbb6ca9791acd1ef7ac1e717389f44f6faa1", size = 535636 },
+    { url = "https://files.pythonhosted.org/packages/65/36/bf70cdfe6984054ee00ab6793de2668ab176c8d322e9acea1cfa7c5cd193/pumpkin_solver-0.2.2-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:acf945661482908fb6ab08299535c95694c8ca6e682ec56a80a1589b7b9a01e9", size = 667409 },
+    { url = "https://files.pythonhosted.org/packages/ae/73/dcbb2bef994b7e10ad33e7e13de5632728c1592eb77e5ba06ce4a4a3d804/pumpkin_solver-0.2.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:5f5ad80c95e1f955d6efe0c75497c06136dbdde951f8f8fd36057f6a42dccb6a", size = 625925 },
+    { url = "https://files.pythonhosted.org/packages/e0/a8/50fefb83d24b8e896536f684ee186676c2814712cd00e54297fd3c466059/pumpkin_solver-0.2.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4b1ae6680a393cbe7982545953dfc9f961a926c4cec28c2c22d1cfe32a869acd", size = 670019 },
+    { url = "https://files.pythonhosted.org/packages/70/e7/6b29e8a7bec924b07625bb8c54cefb63130b649ffcc9d9d4ee7aee807e72/pumpkin_solver-0.2.2-cp311-cp311-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:772c6f40da2be95a161d84e19f343710089c074a9c8726376fdf972fa8ee426c", size = 700020 },
+    { url = "https://files.pythonhosted.org/packages/98/ab/00f13339e817f6852b3e00e67a65497a9d75bef56e556f4bc208172d59fb/pumpkin_solver-0.2.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4abc85bb00e74e7a1a6e26e82a5d4e05a5f8e5c703693a92ef949b04eede87b2", size = 715672 },
+    { url = "https://files.pythonhosted.org/packages/ae/14/910c6d95a2893fad79125fc2ec49015b5f437ab60b3a94a3f3296c2d8426/pumpkin_solver-0.2.2-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:167f36285a07098d2000a9a8b018cc7c6332d4c6f25cb4fca482789ef1ef6935", size = 736938 },
+    { url = "https://files.pythonhosted.org/packages/0d/33/6146bc1d19bc3aee31d2556b842e91d68ed992403e0eb2c9fbbea7a151b6/pumpkin_solver-0.2.2-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:730f3f72e5ce0cd39169f3d848fa78db17342a4e567d8a32d45e9d1302e760be", size = 853703 },
+    { url = "https://files.pythonhosted.org/packages/d8/33/881be38ddbc9c7d610c584859bc2175556bdd5f3d64c652ded8c9fd4c328/pumpkin_solver-0.2.2-cp311-cp311-musllinux_1_2_armv7l.whl", hash = "sha256:7fb5dba75ef68b55bdc67c9cea09b96fc1082739e74909d1213c1e99a1d31e5c", size = 967708 },
+    { url = "https://files.pythonhosted.org/packages/b8/11/9a9edd7353d03b14c168614b49d2ee90f0d15fa5f0eb0bfed0ab32fd6f20/pumpkin_solver-0.2.2-cp311-cp311-musllinux_1_2_i686.whl", hash = "sha256:cecb5123f2376f0ee6566e90f54141527ec7792660bbac49536cd945b7290fc8", size = 907125 },
+    { url = "https://files.pythonhosted.org/packages/e2/91/b5769c7eba714833d9c7624fbfe5f52fcc98e609418a127048f159e7c46f/pumpkin_solver-0.2.2-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:82a14580b80f02f5b359b5ace1929943efe4a48de126dca2b35c95dbf4819546", size = 892374 },
+    { url = "https://files.pythonhosted.org/packages/dc/5c/facfca25cf0e1ad6cdd9e679977c468f7f4a5372dbd08594b2ccee78db82/pumpkin_solver-0.2.2-cp311-cp311-win_amd64.whl", hash = "sha256:4fc935c578df9ac02555b153fb833396af12689a09b280a8c032913987b25b79", size = 535537 },
+    { url = "https://files.pythonhosted.org/packages/b4/ce/22423641d22daab7fddd0609f4e14e2e2f9fc3f2d712a9887ce3b7b0bdd4/pumpkin_solver-0.2.2-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:9a0f8ed974329433901ef77bb78ca046fe4ea647a975bbc09f1cd7d597df1ae4", size = 666748 },
+    { url = "https://files.pythonhosted.org/packages/85/52/449131d761629ab33d6466519d44b0600b7bc2489f68ff6803973109f085/pumpkin_solver-0.2.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:63456552a30ddb0cde9c9ccd54b0fede6d20f3dba3026c8b273d3e438377b743", size = 637725 },
+    { url = "https://files.pythonhosted.org/packages/e4/2a/afa804d9c429fdb88cd24181d161efc46eef6a326342893abe7fa3df3007/pumpkin_solver-0.2.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ceed05d8b9ff26c8cbf6e6133d4d5d80b7d37778799161b888b06b712e6808b6", size = 668019 },
+    { url = "https://files.pythonhosted.org/packages/e7/0d/c13063b9fd4bf1bec136320a6df7ea56b5972d67702741529dad5575cb55/pumpkin_solver-0.2.2-cp312-cp312-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:011764222f134c3cc4a8019c9df4149d23e90cc06685552a7155dda9038ff57a", size = 697800 },
+    { url = "https://files.pythonhosted.org/packages/00/8e/f033a2a9a4b8632550a0dc287b7cd7a2815628ab9c6545ace30767482d23/pumpkin_solver-0.2.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:115af19cadfc080f08b2ee57f7b0118bcd9a5bdb6013b0ff9901e1b2f0588538", size = 713956 },
+    { url = "https://files.pythonhosted.org/packages/1c/ea/abd0ce7495e1910198e8d67ffd67828a676570e199307ef01a5921f2847a/pumpkin_solver-0.2.2-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:a875ec7154ebf2386f189a305a23bed4a7a9e1c8c2ef9e998173580a4fc3f95f", size = 733039 },
+    { url = "https://files.pythonhosted.org/packages/58/fd/3a8d0ebf0a944fa15034306bf1e2a3a430b524e539176d9f56b2e80ef266/pumpkin_solver-0.2.2-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:846e2ec81f184d2593e56ca8311dbbf9e55b4117dfe5ef10a4ec49d8e1de1ebe", size = 850316 },
+    { url = "https://files.pythonhosted.org/packages/f6/eb/44af82591b97340e19e4c9874d7d36f5f9b5014de093be0b539834d39f63/pumpkin_solver-0.2.2-cp312-cp312-musllinux_1_2_armv7l.whl", hash = "sha256:512d9b98b0572537513d0bc5979d0e63d0d91c07fed741f71ac7b01e9ced050c", size = 965464 },
+    { url = "https://files.pythonhosted.org/packages/a7/7a/f8a81db61204ac7497738b580f5f3e41e1140b45014561de744fd4c9cc72/pumpkin_solver-0.2.2-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:38a09c54836bf0698c76c12dce279048d338845582e61c08c3ecac986b494be7", size = 905093 },
+    { url = "https://files.pythonhosted.org/packages/9c/36/0d41415bf36ea980ed0692ebbbb85e5487a681e985c61780c4f719f0be6c/pumpkin_solver-0.2.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:b184f140e204958948ac255c10049a277ae8ecb2d5ac160a911cd09afb12872b", size = 890549 },
+    { url = "https://files.pythonhosted.org/packages/f9/85/9b677cfc72d30197f5c82a1798f7076809da56c29070583474549099787a/pumpkin_solver-0.2.2-cp312-cp312-win_amd64.whl", hash = "sha256:859b47f7a78aa8a99a24ae980fdd78703a55c3fcdbda389936e73c4bc46c4184", size = 533633 },
+    { url = "https://files.pythonhosted.org/packages/30/41/7b65efa61684d91d61ec7deefdccd6d0577a9c2ff8fccf5bd37466d72d71/pumpkin_solver-0.2.2-pp310-pypy310_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f6978ccbf783928c14a3c77dad0c74b9e1ab79550a92af981a02df97fd7dfdda", size = 669640 },
+    { url = "https://files.pythonhosted.org/packages/5d/13/1c7904de7074e7e7aeaa6cc8bbe30e85b2f0a29aadcd654ae21d51d35080/pumpkin_solver-0.2.2-pp310-pypy310_pp73-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:782a2c3574bb499376c8ea1a70dbd1fe1f198b93dcc2c0da7c8c374a50f24712", size = 699341 },
+    { url = "https://files.pythonhosted.org/packages/56/a2/0bd4a08c365e55b0c63ec8d48a22fb7b0ed3141873a3a808b7ca4a32c356/pumpkin_solver-0.2.2-pp310-pypy310_pp73-musllinux_1_2_aarch64.whl", hash = "sha256:449b1bfb81592348559d235845e6667dbfcd8c5006518ca1a7f734d35e1124c1", size = 852857 },
+    { url = "https://files.pythonhosted.org/packages/77/02/575c81619be28734bd593f2b72a6c93edb3d5299895ac59c648bd3afb540/pumpkin_solver-0.2.2-pp310-pypy310_pp73-musllinux_1_2_armv7l.whl", hash = "sha256:791407a5825f1ad3639ce75284cafc4f571f9a643a8bed8ffb13d5a482a2d744", size = 966804 },
+    { url = "https://files.pythonhosted.org/packages/d5/fc/6e8f93e821bd400c329542011c95da601ddb22228c674d6d146fab23f297/pumpkin_solver-0.2.2-pp310-pypy310_pp73-musllinux_1_2_i686.whl", hash = "sha256:b40bcbc23bfa8e6f476793e7907aa5253d7aa8e4f64394f2ac78438bca4787a2", size = 906119 },
+    { url = "https://files.pythonhosted.org/packages/e0/3f/7a55e2c8282b81e5e5d59424db03fd97d8acce10ea05abca051d25b58ace/pumpkin_solver-0.2.2-pp310-pypy310_pp73-musllinux_1_2_x86_64.whl", hash = "sha256:28197ad9f901d9e40f4507871a86ab9c0e1700da06392afadb56428bddf5f203", size = 891456 },
+    { url = "https://files.pythonhosted.org/packages/f9/e4/d21c975248eb43edda2ff1cd5e76ce5347660997ed71548092d6d6c92cb4/pumpkin_solver-0.2.2-pp311-pypy311_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4e7c6202e5c3ea8354c23ea4a33c31724ac755ee227818e47169e46f42912fb8", size = 669366 },
+    { url = "https://files.pythonhosted.org/packages/1f/37/9366d4145e5bd76f38d5cb47ced9e4083811b97a8ed4eba566db54386b22/pumpkin_solver-0.2.2-pp311-pypy311_pp73-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:7be73185352236ad2113035f1da19f33a04f5142726b2c5b75624a4d87b6b44c", size = 699154 },
+    { url = "https://files.pythonhosted.org/packages/68/d1/c4abc65a731c92ffc327de5285858968498dd0d696682d0f86999bf02529/pumpkin_solver-0.2.2-pp311-pypy311_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:06b767f6dc9ad1d0a52a54d407a64e907f7a73ce748f5013a7b14bfbc1174f5f", size = 714528 },
+    { url = "https://files.pythonhosted.org/packages/c8/25/0b1d196ba08f89a10bf49a32f04162ed7b57a7a5dc6b3bcc126852c95a6d/pumpkin_solver-0.2.2-pp311-pypy311_pp73-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:a3e2a9bea7a019d55f5c3ef698e21cc50bf61bda52a51fce6310cfcc990caead", size = 735668 },
+    { url = "https://files.pythonhosted.org/packages/31/e3/a593d2ff20a97cadf36f2617aab1b24095d3bfd17ccfec9b645945912919/pumpkin_solver-0.2.2-pp311-pypy311_pp73-musllinux_1_2_aarch64.whl", hash = "sha256:c8f58c291a820dd6fd41b3894992c3c292fcf4f339296f705c816e35387e306b", size = 852349 },
+    { url = "https://files.pythonhosted.org/packages/e5/13/c4e7cf9f17299db97c5133eca59bbad7b6dedcc5cf0efa900ffccab25066/pumpkin_solver-0.2.2-pp311-pypy311_pp73-musllinux_1_2_armv7l.whl", hash = "sha256:7d6e1bbb53c83d2cab07946c9a4ac0bd05a68672514e7dfab4593cddf26313df", size = 966672 },
+    { url = "https://files.pythonhosted.org/packages/2b/9e/f074e773db286fd81f2f5131e8f99b85ee6a7773f1319c2aa00232310055/pumpkin_solver-0.2.2-pp311-pypy311_pp73-musllinux_1_2_i686.whl", hash = "sha256:fe048caa25103bf7fe6f80a41b181c3f0e64bfb490231f38a07349afc224245a", size = 905911 },
+    { url = "https://files.pythonhosted.org/packages/16/cd/af646ef8260d25b4ff48c6c9459405f09a4f3f6cec95bd2156a48f5dbfb4/pumpkin_solver-0.2.2-pp311-pypy311_pp73-musllinux_1_2_x86_64.whl", hash = "sha256:bf594e469f5fce067690a2b7f392cc6a847a11e4380f5ba27510898e9d7a4290", size = 891148 },
+]
+
+[[package]]
 name = "pycsp3"
 version = "2.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -391,7 +444,7 @@ wheels = [
 
 [[package]]
 name = "pycsp3-solvers-extra"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "pycsp3" },
@@ -401,6 +454,8 @@ dependencies = [
 all = [
     { name = "docplex" },
     { name = "ortools" },
+    { name = "pumpkin-solver" },
+    { name = "z3-solver" },
 ]
 cpo = [
     { name = "docplex" },
@@ -412,6 +467,12 @@ dev = [
 ortools = [
     { name = "ortools" },
 ]
+pumpkin = [
+    { name = "pumpkin-solver" },
+]
+z3 = [
+    { name = "z3-solver" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -419,11 +480,15 @@ requires-dist = [
     { name = "docplex", marker = "extra == 'cpo'", specifier = ">=2.25" },
     { name = "ortools", marker = "extra == 'all'", specifier = ">=9.0" },
     { name = "ortools", marker = "extra == 'ortools'", specifier = ">=9.0" },
+    { name = "pumpkin-solver", marker = "extra == 'all'", specifier = ">=0.1" },
+    { name = "pumpkin-solver", marker = "extra == 'pumpkin'", specifier = ">=0.1" },
     { name = "pycsp3", specifier = ">=2.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
+    { name = "z3-solver", marker = "extra == 'all'", specifier = ">=4.8" },
+    { name = "z3-solver", marker = "extra == 'z3'", specifier = ">=4.8" },
 ]
-provides-extras = ["ortools", "cpo", "all", "dev"]
+provides-extras = ["ortools", "cpo", "z3", "pumpkin", "all", "dev"]
 
 [[package]]
 name = "pygments"
@@ -537,4 +602,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5e/a7/c202b344c5ca7daf398f3b8a477eeb205cf3b6f32e7ec3a6bac0629ca975/tzdata-2025.3.tar.gz", hash = "sha256:de39c2ca5dc7b0344f2eba86f49d614019d29f060fc4ebc8a417896a620b56a7", size = 196772 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/b0/003792df09decd6849a5e39c28b513c06e84436a54440380862b5aeff25d/tzdata-2025.3-py2.py3-none-any.whl", hash = "sha256:06a47e5700f3081aab02b2e513160914ff0694bce9947d6b76ebd6bf57cfc5d1", size = 348521 },
+]
+
+[[package]]
+name = "z3-solver"
+version = "4.15.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8a/8e/0c8f17309549d2e5cde9a3ccefa6365437f1e7bafe71878eaf9478e47b18/z3_solver-4.15.4.0.tar.gz", hash = "sha256:928c29b58c4eb62106da51c1914f6a4a55d0441f8f48a81b9da07950434a8946", size = 5018600 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/33/a3d5d2eaeb0f7b3174d57d405437eabb2075d4d50bd9ea0957696c435c7b/z3_solver-4.15.4.0-py3-none-macosx_13_0_arm64.whl", hash = "sha256:407e825cc9211f95ef46bdc8d151bf630e7ab2d62a21d24cd74c09cc5b73f3aa", size = 37052538 },
+    { url = "https://files.pythonhosted.org/packages/47/84/fd7ffac1551cd9f8d44fe41358f738be670fc4c24dfd514fab503f2cf3e7/z3_solver-4.15.4.0-py3-none-macosx_13_0_x86_64.whl", hash = "sha256:00bd10c5a6a5f6112d3a9a810d0799227e52f76caa860dafa5e00966bb47eb13", size = 39807925 },
+    { url = "https://files.pythonhosted.org/packages/21/c9/bb51a96af0091324c81b803f16c49f719f9f6ea0b0bb52200f5c97ec4892/z3_solver-4.15.4.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7e103a6f203f505b8b8b8e5c931cc407c95b61556512d4921c1ddc0b3f41b08e", size = 29268352 },
+    { url = "https://files.pythonhosted.org/packages/bf/2e/0b49f7e4e53817cfb09a0f6585012b782dfe0b666e8abefcb4fac0570606/z3_solver-4.15.4.0-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:62c7e9cbdd711932301f29919ad9158de9b2f58b4d281dd259bbcd0a2f408ba1", size = 27226534 },
+    { url = "https://files.pythonhosted.org/packages/26/91/33de49538444d4aafbe47415c450c2f9abab1733e1226f276b496672f46c/z3_solver-4.15.4.0-py3-none-win32.whl", hash = "sha256:be3bc916545c96ffbf89e00d07104ff14f78336e55db069177a1bfbcc01b269d", size = 13191672 },
+    { url = "https://files.pythonhosted.org/packages/03/d6/a0b135e4419df475177ae78fc93c422430b0fd8875649486f9a5989772e6/z3_solver-4.15.4.0-py3-none-win_amd64.whl", hash = "sha256:00e35b02632ed085ea8199fb230f6015e6fc40554a6680c097bd5f060e827431", size = 16259597 },
 ]
