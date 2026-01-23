@@ -11,7 +11,7 @@ Classic cryptarithmetic puzzle where each letter represents a unique digit.
 
 import time
 from pycsp3 import *
-from pycsp3_solvers_extra import solve
+from pycsp3_solvers_extra import solve, supported_solvers
 
 
 def print_solution(solution: dict) -> None:
@@ -37,7 +37,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="SEND+MORE=MONEY Solver Comparison")
     parser.add_argument("-v", "--verbose", type=int, default=0, help="Verbosity level")
-    parser.add_argument("--solvers", nargs="+", default=["ortools", "ace", "choco", "cpo"],
+    parser.add_argument("--solvers", nargs="+", default=supported_solvers(),
                         help="Solvers to compare")
     args = parser.parse_args()
 

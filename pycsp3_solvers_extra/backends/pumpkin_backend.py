@@ -24,6 +24,7 @@ from pycsp3.classes.auxiliary.conditions import (
 from pycsp3.classes.auxiliary.enums import (
     TypeConditionOperator,
     TypeObj,
+    TypeOrderedOperator,
     TypeStatus,
 )
 from pycsp3.classes.main.variables import Variable
@@ -722,6 +723,61 @@ class PumpkinCallbacks(BaseCallbacks):
 
         self._log(2, f"Added {'positive' if positive else 'negative'} table with {len(tuples)} tuples")
 
+    def ctr_circuit(self, lst: list[Variable], size: None | int | Variable):
+        """Circuit constraint (Hamiltonian cycle)."""
+        if size is not None:
+            raise NotImplementedError("Pumpkin circuit only supports full circuits (size=None)")
+
+        vars_list = self._get_pumpkin_var_list(lst)
+        n = len(vars_list)
+        if n == 0:
+            return
+
+        # Successors must form a permutation with no self-loops.
+        for i, var in enumerate(vars_list):
+            self.model.add_constraint(
+                self._linear_le([(var, 1)], n - 1, self._new_tag())
+            )
+            self.model.add_constraint(
+                self._linear_le([(var, -1)], 0, self._new_tag())
+            )
+            self.model.add_constraint(
+                self._linear_not_equals([(var, 1)], i, self._new_tag())
+            )
+
+        self.model.add_constraint(
+            constraints.AllDifferent(vars_list, self._new_tag())
+        )
+
+        # Position variables eliminate sub-circuits.
+        positions = [
+            self.model.new_integer_variable(0, n - 1, name=f"circuit_pos_{i}")
+            for i in range(n)
+        ]
+        self.model.add_constraint(
+            constraints.AllDifferent(positions, self._new_tag())
+        )
+        self.model.add_constraint(
+            self._linear_equals([(positions[0], 1)], 0, self._new_tag())
+        )
+
+        for i in range(n):
+            pos_next = self.model.new_integer_variable(0, n - 1, name=f"circuit_pos_next_{i}")
+            self.model.add_constraint(
+                constraints.Element(vars_list[i], positions, pos_next, self._new_tag())
+            )
+            wrap = self.model.new_integer_variable(0, 1, name=f"circuit_wrap_{i}")
+            # pos_next + n * wrap = positions[i] + 1
+            self.model.add_constraint(
+                self._linear_equals(
+                    [(pos_next, 1), (wrap, n), (positions[i], -1)],
+                    1,
+                    self._new_tag(),
+                )
+            )
+
+        self._log(2, f"Added Circuit constraint on {n} nodes")
+
     def ctr_cumulative(self, origins: list[Variable], lengths: list[Variable] | list[int],
                        heights: list[Variable] | list[int], condition: Condition):
         """Cumulative constraint."""
@@ -756,6 +812,49 @@ class PumpkinCallbacks(BaseCallbacks):
         )
 
         self._log(2, f"Added Cumulative on {len(origins)} tasks")
+
+    def ctr_ordered(
+        self,
+        lst: list[Variable],
+        operator: TypeOrderedOperator,
+        lengths: None | list[int] | list[Variable],
+    ):
+        """Ordered constraint."""
+        vars_list = self._get_pumpkin_var_list(lst)
+
+        def _append_offset_term(terms: list[Any], offset: Any, coeff: int) -> None:
+            if isinstance(offset, int):
+                if offset != 0:
+                    terms.append((offset, coeff))
+            else:
+                terms.append((offset, coeff))
+
+        for i in range(len(vars_list) - 1):
+            offset: Any = 0
+            if lengths is not None:
+                if isinstance(lengths[i], int):
+                    offset = lengths[i]
+                else:
+                    offset = self.vars[lengths[i].id]
+
+            if operator == TypeOrderedOperator.STRICTLY_INCREASING:
+                terms = [(vars_list[i], 1), (vars_list[i + 1], -1)]
+                _append_offset_term(terms, offset, 1)
+                self.model.add_constraint(self._linear_le(terms, -1, self._new_tag()))
+            elif operator == TypeOrderedOperator.INCREASING:
+                terms = [(vars_list[i], 1), (vars_list[i + 1], -1)]
+                _append_offset_term(terms, offset, 1)
+                self.model.add_constraint(self._linear_le(terms, 0, self._new_tag()))
+            elif operator == TypeOrderedOperator.STRICTLY_DECREASING:
+                terms = [(vars_list[i + 1], 1), (vars_list[i], -1)]
+                _append_offset_term(terms, offset, -1)
+                self.model.add_constraint(self._linear_le(terms, -1, self._new_tag()))
+            elif operator == TypeOrderedOperator.DECREASING:
+                terms = [(vars_list[i + 1], 1), (vars_list[i], -1)]
+                _append_offset_term(terms, offset, -1)
+                self.model.add_constraint(self._linear_le(terms, 0, self._new_tag()))
+
+        self._log(2, f"Added Ordered constraint with {operator}")
 
     # ========== Objective ==========
 
