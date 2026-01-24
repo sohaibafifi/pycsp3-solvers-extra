@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 NATIVE_SOLVERS = {"ace", "choco"}
 
 # Solvers implemented by this package
-EXTRA_SOLVERS = {"ortools", "cpo", "z3", "pumpkin"}
+EXTRA_SOLVERS = {"ortools", "cpo", "z3", "pumpkin", "minizinc"}
 
 
 def supported_solvers() -> list[str]:
@@ -89,6 +89,13 @@ def solve(
     """
     solver_lower = solver.lower()
 
+    # Handle minizinc/subsolver pattern (e.g., "minizinc/gecode", "minizinc/chuffed")
+    subsolver: str | None = None
+    if solver_lower.startswith("minizinc"):
+        parts = solver_lower.split("/", 1)
+        solver_lower = parts[0]  # "minizinc"
+        subsolver = parts[1] if len(parts) > 1 else None  # auto-detect if not specified
+
     # Delegate native solvers to pycsp3
     if solver_lower in NATIVE_SOLVERS:
         return _solve_native(
@@ -117,6 +124,7 @@ def solve(
         options,
         hints,
         output_dir,
+        subsolver,
     )
 
 
@@ -171,7 +179,7 @@ def _solve_native(
         solver=solver_str,
         options=options,
         filename=compile_target,
-        verbose=-1,
+        verbose=verbose - 1,  # pycsp3 verbose: -1=quiet, 0=normal, 1+=detailed
     )
 
 
@@ -184,6 +192,7 @@ def _solve_extra(
     options: str,
     hints: dict[str, int] | None,
     output_dir: str | os.PathLike | None,
+    subsolver: str | None = None,
 ) -> TypeStatus:
     """Solve with extra backends using XCSP3 parsing."""
     # Get the appropriate backend
@@ -221,13 +230,17 @@ def _solve_extra(
 
     try:
         # Create backend callbacks instance
-        callbacks = backend_class(
-            time_limit=time_limit,
-            sols=sols,
-            verbose=verbose,
-            options=options,
-            hints=hints,
-        )
+        backend_kwargs = {
+            "time_limit": time_limit,
+            "sols": sols,
+            "verbose": verbose,
+            "options": options,
+            "hints": hints,
+        }
+        # Pass subsolver for backends that support it (e.g., minizinc)
+        if subsolver is not None:
+            backend_kwargs["subsolver"] = subsolver
+        callbacks = backend_class(**backend_kwargs)
 
         from pycsp3_solvers_extra.transforms import TransformingCallbacks
         callbacks = TransformingCallbacks(callbacks, backend_name=solver)

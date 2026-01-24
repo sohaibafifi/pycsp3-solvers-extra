@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pycsp3-solvers-extra"
 version = "0.5.0"
-description = "Extra solver backends for pycsp3 (OR-Tools, IBM CPO, Z3, Pumpkin)"
+description = "Extra solver backends for pycsp3 (OR-Tools, IBM CPO, Z3, Pumpkin, MiniZinc)"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10,<3.13"
 authors = [
     {name = "Sohaib AFIFI"}
 ]
-keywords = ["constraint-programming", "csp", "xcsp3", "pycsp3", "or-tools", "cplex", "z3", "pumpkin", "optimization"]
+keywords = ["constraint-programming", "csp", "xcsp3", "pycsp3", "or-tools", "cplex", "z3", "pumpkin", "minizinc", "optimization"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -35,7 +35,8 @@ ortools = ["ortools>=9.0"]
 cpo = ["docplex>=2.25"]
 z3 = ["z3-solver>=4.8"]
 pumpkin = ["pumpkin-solver>=0.1"]
-all = ["ortools>=9.0", "docplex>=2.25", "z3-solver>=4.8", "pumpkin-solver>=0.1"]
+minizinc = ["minizinc>=0.9"]
+all = ["ortools>=9.0", "docplex>=2.25", "z3-solver>=4.8", "pumpkin-solver>=0.1", "minizinc>=0.9"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
