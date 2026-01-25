@@ -187,6 +187,15 @@ wheels = [
 ]
 
 [[package]]
+name = "minizinc"
+version = "0.10.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/dd/3c/f425820ca7d05f824563282998504719dfaef1022608808a6c36e44396f4/minizinc-0.10.0.tar.gz", hash = "sha256:ce1d3501ce45068a5cf419a71e5aa507e3a62a3088638ae96a200ec329f90a3a", size = 46929 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/1d/d1dc3d250643defde3d71cd9d64911b057ec38b88bc1555ed55b6260fc4f/minizinc-0.10.0-py3-none-any.whl", hash = "sha256:8bd951866f8b246c4210b801bfc926e6bf7bc59a17f002b4c5fc49d9d9ec17e3", size = 44819 },
+]
+
+[[package]]
 name = "numpy"
 version = "2.2.6"
 source = { registry = "https://pypi.org/simple" }
@@ -453,6 +462,7 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "docplex" },
+    { name = "minizinc" },
     { name = "ortools" },
     { name = "pumpkin-solver" },
     { name = "z3-solver" },
@@ -463,6 +473,9 @@ cpo = [
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
+]
+minizinc = [
+    { name = "minizinc" },
 ]
 ortools = [
     { name = "ortools" },
@@ -478,6 +491,8 @@ z3 = [
 requires-dist = [
     { name = "docplex", marker = "extra == 'all'", specifier = ">=2.25" },
     { name = "docplex", marker = "extra == 'cpo'", specifier = ">=2.25" },
+    { name = "minizinc", marker = "extra == 'all'", specifier = ">=0.9" },
+    { name = "minizinc", marker = "extra == 'minizinc'", specifier = ">=0.9" },
     { name = "ortools", marker = "extra == 'all'", specifier = ">=9.0" },
     { name = "ortools", marker = "extra == 'ortools'", specifier = ">=9.0" },
     { name = "pumpkin-solver", marker = "extra == 'all'", specifier = ">=0.1" },
@@ -488,7 +503,7 @@ requires-dist = [
     { name = "z3-solver", marker = "extra == 'all'", specifier = ">=4.8" },
     { name = "z3-solver", marker = "extra == 'z3'", specifier = ">=4.8" },
 ]
-provides-extras = ["ortools", "cpo", "z3", "pumpkin", "all", "dev"]
+provides-extras = ["ortools", "cpo", "z3", "pumpkin", "minizinc", "all", "dev"]
 
 [[package]]
 name = "pygments"
