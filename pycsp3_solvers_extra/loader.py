@@ -220,7 +220,7 @@ def load(filepath, *, clear_model: bool = True) -> ParserXCSP3:
     array_vars = set()
     for entry in parser.vEntries:
         if isinstance(entry, XVarArray):
-            array_vars.update(v for v in entry.variables if v is not None)
+            array_vars.update(v.id for v in entry.variables if v is not None)
             nested = _reshape_flat_vars(entry.variables, entry.size)
             Variable.name2obj[entry.id] = nested
             lv = _to_list_var(nested)
@@ -231,7 +231,7 @@ def load(filepath, *, clear_model: bool = True) -> ParserXCSP3:
                     Variable.name2obj[var.id] = var
 
     for entry in parser.vEntries:
-        if isinstance(entry, XVar) and entry not in array_vars:
+        if isinstance(entry, XVar) and entry.id not in array_vars:
             Variable.name2obj[entry.id] = entry
             EVar(entry)
 
