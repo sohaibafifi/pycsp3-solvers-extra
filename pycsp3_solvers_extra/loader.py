@@ -20,6 +20,7 @@ from pycsp3.classes.main.constraints import (
 from pycsp3.classes.main.variables import Variable
 from pycsp3.parser.constants import STATIC
 from pycsp3.parser.xentries import XBlock, XCtr, XGroup, XObjExpr, XSlide, XVar, XVarArray
+from pycsp3.parser.xparser import ParserXCSP3
 from pycsp3.tools.curser import ListVar, OpOverrider
 from pycsp3.tools.utilities import matrix_to_string, table_to_string
 
@@ -44,9 +45,7 @@ def _reshape_flat_vars(flat_vars: list, sizes: list[int]):
 
 
 def _to_list_var(tree):
-    if tree is None:
-        return None
-    if isinstance(tree, Variable):
+    if tree is None or isinstance(tree, Variable):
         return tree
     return ListVar(_to_list_var(item) for item in tree)
 
