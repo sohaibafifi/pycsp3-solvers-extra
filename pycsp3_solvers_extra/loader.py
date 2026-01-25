@@ -53,23 +53,14 @@ def _to_list_var(tree):
 
 def _parse_xcsp3_file(path: Path):
     from pycsp3.parser.xparser import ParserXCSP3
+
     suffixes = path.suffixes
-    if not suffixes or suffixes[-1] not in {".xml", ".lzma"}:
-        raise ValueError("Expected an .xml or .xml.lzma file")
-    if suffixes[-1] == ".lzma":
-        if len(suffixes) < 2 or suffixes[-2] != ".xml":
-            raise ValueError("Expected an .xml.lzma file")
+    if suffixes[-2:] == [".xml", ".lzma"]:
         with lzma.open(path, "rb") as handle:
             return ParserXCSP3(handle)
-    return ParserXCSP3(str(path))
-
-
-def _attrs_to_list(attrs: dict) -> list[tuple]:
-    return [(k, v) for k, v in attrs.items()]
-
-
-def _tuple_list_to_string(values: list) -> str:
-    return "".join("(" + ",".join(str(v) for v in t) + ")" for t in values)
+    if suffixes[-1:] == [".xml"]:
+        return ParserXCSP3(str(path))
+    raise ValueError("Expected an .xml or .xml.lzma file")
 
 
 def _is_list_of_lists(value) -> bool:
@@ -81,22 +72,24 @@ def _convert_argument(arg):
     lifted = False
     content_compressible = True
 
-    if arg.type == TypeCtrArg.MATRIX and isinstance(value, list):
-        content_compressible = value
-        value = matrix_to_string(value)
-    elif arg.type in (TypeCtrArg.SUPPORTS, TypeCtrArg.CONFLICTS) and isinstance(value, list):
-        if value and not isinstance(value[0], (list, tuple)):
-            value = [(v,) for v in value]
-        value = table_to_string(value)
-    elif arg.type == TypeCtrArg.EXCEPT and isinstance(value, list):
-        if _is_list_of_lists(value):
-            value = _tuple_list_to_string(value)
-        else:
-            value = "(" + ",".join(str(v) for v in value) + ")"
-    elif arg.type == TypeCtrArg.LIST and _is_list_of_lists(value):
-        lifted = True
-    elif _is_list_of_lists(value) and arg.type not in (TypeCtrArg.LIST, TypeCtrArg.MATRIX):
-        value = _tuple_list_to_string(value)
+    if isinstance(value, list):
+        if arg.type == TypeCtrArg.MATRIX:
+            content_compressible = value
+            value = matrix_to_string(value)
+        elif arg.type in (TypeCtrArg.SUPPORTS, TypeCtrArg.CONFLICTS):
+            if value and not isinstance(value[0], (list, tuple)):
+                value = [(v,) for v in value]
+            value = table_to_string(value)
+        elif arg.type == TypeCtrArg.EXCEPT:
+            if _is_list_of_lists(value):
+                value = "".join("(" + ",".join(str(v) for v in t) + ")" for t in value)
+            else:
+                value = "(" + ",".join(str(v) for v in value) + ")"
+        elif _is_list_of_lists(value):
+            if arg.type == TypeCtrArg.LIST:
+                lifted = True
+            elif arg.type != TypeCtrArg.MATRIX:
+                value = "".join("(" + ",".join(str(v) for v in t) + ")" for t in value)
 
     content_ordered = isinstance(value, list) and arg.type not in (TypeCtrArg.SET, TypeCtrArg.MSET)
     return value, content_compressible, lifted, content_ordered
@@ -104,18 +97,30 @@ def _convert_argument(arg):
 
 def _normalize_unary_table(values: list):
     normalized = []
-    for v in values:
-        if isinstance(v, range):
-            normalized.extend(v)
-        elif isinstance(v, (list, tuple, set, frozenset)):
-            for item in v:
-                if isinstance(item, range):
-                    normalized.extend(item)
-                else:
-                    normalized.append(item)
+
+    def add(item):
+        if isinstance(item, range):
+            normalized.extend(item)
         else:
-            normalized.append(v)
+            normalized.append(item)
+
+    for value in values:
+        if isinstance(value, (list, tuple, set, frozenset)):
+            for item in value:
+                add(item)
+        else:
+            add(value)
     return normalized
+
+
+def _collect_template_constraints(template: XCtr, arguments, collected: list[ECtr]) -> None:
+    if template.abstraction is None:
+        collected.append(ECtr(_constraint_from_xctr(template)))
+        return
+    for args in arguments:
+        template.id = None
+        template.abstraction.concretize(args)
+        collected.append(ECtr(_constraint_from_xctr(template)))
 
 
 def _constraint_from_xctr(xctr: XCtr) -> Constraint:
@@ -156,13 +161,13 @@ def _constraint_from_xctr(xctr: XCtr) -> Constraint:
             constraint.arg(
                 arg.type,
                 content,
-                attributes=_attrs_to_list(arg.attributes),
+                attributes=list(arg.attributes.items()),
                 content_compressible=compressible,
                 lifted=lifted,
                 content_ordered=ordered,
             )
 
-    constraint.attributes = _attrs_to_list(xctr.attributes)
+    constraint.attributes = list(xctr.attributes.items())
     return constraint
 
 
@@ -173,23 +178,9 @@ def _collect_constraints(entry, collected: list[ECtr]) -> None:
         for sub in entry.subentries:
             _collect_constraints(sub, collected)
     elif isinstance(entry, XGroup):
-        template = entry.template
-        if template.abstraction is None:
-            collected.append(ECtr(_constraint_from_xctr(template)))
-            return
-        for args in entry.all_args:
-            template.id = None
-            template.abstraction.concretize(args)
-            collected.append(ECtr(_constraint_from_xctr(template)))
+        _collect_template_constraints(entry.template, entry.all_args, collected)
     elif isinstance(entry, XSlide):
-        template = entry.template
-        if template.abstraction is None:
-            collected.append(ECtr(_constraint_from_xctr(template)))
-            return
-        for scope in entry.scopes:
-            template.id = None
-            template.abstraction.concretize(scope)
-            collected.append(ECtr(_constraint_from_xctr(template)))
+        _collect_template_constraints(entry.template, entry.scopes, collected)
 
 
 def _load_objectives(entries) -> None:
