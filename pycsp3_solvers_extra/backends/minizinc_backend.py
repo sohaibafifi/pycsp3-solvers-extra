@@ -125,7 +125,7 @@ class MiniZincCallbacks(BaseCallbacks):
     def _ensure_bool(self, node: Node) -> str:
         """Translate node and ensure result is boolean for MiniZinc.
 
-        MiniZinc requires boolean operands for /\ and \/.
+        MiniZinc requires boolean operands for /\\ and \\/.
         If the expression is an int, wrap it with != 0.
         """
         expr = self.translate_node(node)
