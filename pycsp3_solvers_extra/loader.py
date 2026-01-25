@@ -97,19 +97,10 @@ def _convert_argument(arg):
 
 def _normalize_unary_table(values: list):
     normalized = []
-
-    def add(item):
-        if isinstance(item, range):
-            normalized.extend(item)
-        else:
-            normalized.append(item)
-
     for value in values:
-        if isinstance(value, (list, tuple, set, frozenset)):
-            for item in value:
-                add(item)
-        else:
-            add(value)
+        for item in (value if isinstance(value, (list, tuple)) else [value]):
+            normalized.extend(item) if isinstance(item, range) else normalized.append(item)
+
     return normalized
 
 
