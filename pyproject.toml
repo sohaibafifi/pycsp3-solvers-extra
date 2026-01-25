@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycsp3-solvers-extra"
-version = "0.5.0"
+version = "0.6.0"
 description = "Extra solver backends for pycsp3 (OR-Tools, IBM CPO, Z3, Pumpkin, MiniZinc)"
 readme = "README.md"
 license = {text = "MIT"}
