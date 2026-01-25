@@ -24,8 +24,6 @@ from pycsp3.parser.xparser import ParserXCSP3
 from pycsp3.tools.curser import ListVar, OpOverrider
 from pycsp3.tools.utilities import matrix_to_string, table_to_string
 
-_loaded_instance = None
-
 
 def _reshape_flat_vars(flat_vars: list, sizes: list[int]):
     def build(level: int, index: int):
@@ -172,6 +170,21 @@ def _collect_constraints(entry, collected: list[ECtr]) -> None:
     elif isinstance(entry, XSlide):
         _collect_template_constraints(entry.template, entry.scopes, collected)
 
+def _load_variables(entries) -> None:
+    for entry in entries:
+        if isinstance(entry, XVarArray):
+            nested = _reshape_flat_vars(entry.variables, entry.size)
+            Variable.name2obj[entry.id] = nested
+            lv = _to_list_var(nested)
+            EVarArray(lv, entry.id)
+            Variable.arrays.append(lv)
+            for var in entry.variables:
+                if var is not None:
+                    Variable.name2obj[var.id] = var
+
+        elif isinstance(entry, XVar):
+            Variable.name2obj[entry.id] = entry
+            EVar(entry)
 
 def _load_objectives(entries) -> None:
     for entry in entries:
@@ -217,23 +230,7 @@ def load(filepath, *, clear_model: bool = True) -> ParserXCSP3:
 
     parser = _parse_xcsp3_file(path)
 
-    array_vars = set()
-    for entry in parser.vEntries:
-        if isinstance(entry, XVarArray):
-            array_vars.update(v.id for v in entry.variables if v is not None)
-            nested = _reshape_flat_vars(entry.variables, entry.size)
-            Variable.name2obj[entry.id] = nested
-            lv = _to_list_var(nested)
-            EVarArray(lv, entry.id)
-            Variable.arrays.append(lv)
-            for var in entry.variables:
-                if var is not None:
-                    Variable.name2obj[var.id] = var
-
-    for entry in parser.vEntries:
-        if isinstance(entry, XVar) and entry.id not in array_vars:
-            Variable.name2obj[entry.id] = entry
-            EVar(entry)
+    _load_variables(parser.vEntries)
 
     constraints = []
     for entry in parser.cEntries:
@@ -244,13 +241,9 @@ def load(filepath, *, clear_model: bool = True) -> ParserXCSP3:
     _load_objectives(parser.oEntries)
     _load_annotations(parser.aEntries)
 
-    global _loaded_instance
-    _loaded_instance = SimpleNamespace(parser=parser, source=str(path))
-
     # Parser import disables the OpOverrider; re-enable it for normal modeling.
     OpOverrider.enable()
     return parser
 
 
-def get_loaded_instance():
-    return _loaded_instance
+

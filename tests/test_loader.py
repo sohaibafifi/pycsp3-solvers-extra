@@ -224,15 +224,6 @@ class TestLoadFunction:
         assert parser is not None
         assert "x" in Variable.name2obj
 
-    def test_get_loaded_instance(self, xcsp_fixture):
-        """get_loaded_instance returns namespace after load."""
-        from pycsp3_solvers_extra.loader import load, get_loaded_instance
-
-        load(xcsp_fixture)
-        instance = get_loaded_instance()
-        assert instance is not None
-        assert instance.parser is not None
-        assert instance.source == str(xcsp_fixture)
 
     def test_clear_model_true(self, xcsp_fixture, xcsp_array_fixture):
         """clear_model=True clears previous state."""
