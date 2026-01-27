@@ -11,6 +11,11 @@ def main() -> None:
     parser.add_argument("--verbose", type=int, default=0, help="Verbosity level")
     parser.add_argument("--time-limit", type=float, default=None, help="Time limit in seconds")
     parser.add_argument("--options", default="", help="Solver-specific options (e.g. '--options=\"-positive=CT2\"')")
+    parser.add_argument(
+        "--competition-output",
+        action="store_true",
+        help="Emit XCSP competition output lines (o/s/v)",
+    )
     args = parser.parse_args()
 
     clear()
@@ -20,9 +25,11 @@ def main() -> None:
         verbose=args.verbose,
         time_limit=args.time_limit,
         options=args.options,
+        competition_output=args.competition_output,
     )
-    print(status)
-    print(bound())
+    if not args.competition_output:
+        print(status)
+        print(bound())
 
 
 if __name__ == "__main__":

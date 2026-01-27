@@ -1232,7 +1232,7 @@ class Z3Callbacks(BaseCallbacks):
 
     def obj_minimize(self, term: Variable | Node):
         """Minimize objective."""
-        self._has_objective = True
+        self._mark_objective()
         if isinstance(term, Variable):
             self._objective = self.vars[term.id]
         else:
@@ -1242,7 +1242,7 @@ class Z3Callbacks(BaseCallbacks):
 
     def obj_maximize(self, term: Variable | Node):
         """Maximize objective."""
-        self._has_objective = True
+        self._mark_objective()
         if isinstance(term, Variable):
             self._objective = self.vars[term.id]
         else:
@@ -1273,7 +1273,7 @@ class Z3Callbacks(BaseCallbacks):
         else:
             raise NotImplementedError(f"Objective type {obj_type} not implemented")
 
-        self._has_objective = True
+        self._mark_objective()
         self._objective = obj_expr
         self._minimize = True
         self._log(1, f"Set {obj_type} minimization objective")
@@ -1299,7 +1299,7 @@ class Z3Callbacks(BaseCallbacks):
         else:
             raise NotImplementedError(f"Objective type {obj_type} not implemented")
 
-        self._has_objective = True
+        self._mark_objective()
         self._objective = obj_expr
         self._minimize = False
         self._log(1, f"Set {obj_type} maximization objective")
@@ -1346,6 +1346,24 @@ class Z3Callbacks(BaseCallbacks):
                 solver.minimize(self._objective)
             else:
                 solver.maximize(self._objective)
+
+            # Stream objective improvements when supported by Z3.
+            if self.get_competition_progress_printer() is not None:
+                set_on_model = getattr(solver, "set_on_model", None)
+                if callable(set_on_model):
+                    def _on_model(model):
+                        try:
+                            obj_val = model.eval(self._objective, model_completion=True)
+                            if hasattr(obj_val, "as_long"):
+                                try:
+                                    obj_val = obj_val.as_long()
+                                except Exception:
+                                    obj_val = str(obj_val)
+                            self._report_objective_progress(obj_val)
+                        except Exception:
+                            return
+
+                    set_on_model(_on_model)
 
         want_all = self.sols == "all" or (isinstance(self.sols, int) and self.sols > 1)
         if want_all and not self._has_objective:

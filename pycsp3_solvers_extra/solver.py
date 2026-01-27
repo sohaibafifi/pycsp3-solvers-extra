@@ -9,6 +9,11 @@ from __future__ import annotations
 
 import os
 import tempfile
+import threading
+import time
+import uuid
+import re
+import lzma
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
@@ -26,6 +31,55 @@ NATIVE_SOLVERS = {"ace", "choco"}
 
 # Solvers implemented by this package
 EXTRA_SOLVERS = {"ortools", "cpo", "z3", "pumpkin", "minizinc"}
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_NATIVE_O_RE = re.compile(r"^o\s+(-?\d+)")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI color codes from solver output."""
+    return _ANSI_RE.sub("", text)
+
+
+def _native_log_path(pathname: str, solver_obj) -> str:
+    """Compute the expected native solver log path before solving."""
+    suffix = (
+        solver_obj.log_filename_suffix
+        if getattr(solver_obj, "log_filename_suffix", None) is not None
+        else str(getattr(solver_obj, "n_executions", 0))
+    )
+    mac = hex(uuid.getnode())
+    pid = str(os.getpid())
+    filename = f"solver_{mac}_{pid}_{suffix}.log"
+    return os.path.join(pathname, filename)
+
+
+def _tail_native_log(
+    log_path: str,
+    stop_event: threading.Event,
+    *,
+    on_line,
+) -> None:
+    """Tail a native solver log file and forward lines as they arrive."""
+    position = 0
+    while not stop_event.is_set():
+        if not os.path.exists(log_path):
+            time.sleep(0.05)
+            continue
+
+        try:
+            with open(log_path, "r", errors="ignore") as handle:
+                handle.seek(position)
+                while not stop_event.is_set():
+                    line = handle.readline()
+                    if not line:
+                        position = handle.tell()
+                        time.sleep(0.05)
+                        break
+                    on_line(line)
+        except OSError:
+            time.sleep(0.05)
 
 
 def supported_solvers() -> list[str]:
@@ -53,6 +107,7 @@ def solve(
     options: str = "",
     hints: dict[str, int] | None = None,
     output_dir: str | os.PathLike | None = None,
+    competition_output: bool = False,
 ) -> TypeStatus:
     """
     Solve the current pycsp3 model with the specified solver.
@@ -72,6 +127,7 @@ def solve(
         output_dir: Directory for generated XCSP3/log files when compiling models.
             Defaults to the system temp directory. Ignored when filename is provided
             (for extra solvers, filename is treated as an XCSP3 input file).
+        competition_output: If True, emit XCSP competition output lines (o/s/v).
 
     Returns:
         TypeStatus: SAT, UNSAT, OPTIMUM, or UNKNOWN
@@ -107,6 +163,7 @@ def solve(
             options,
             hints,
             output_dir,
+            competition_output=competition_output,
         )
 
     # Handle extra solvers
@@ -125,6 +182,7 @@ def solve(
         hints,
         output_dir,
         subsolver,
+        competition_output=competition_output,
     )
 
 
@@ -137,15 +195,23 @@ def _solve_native(
     options: str,
     hints: dict[str, int] | None,
     output_dir: str | os.PathLike | None,
+    *,
+    competition_output: bool = False,
 ) -> TypeStatus:
     """Delegate to pycsp3's native solve() for ACE/Choco."""
-    from pycsp3 import ACE, CHOCO, ALL
+    from pycsp3 import ACE, CHOCO, ALL, solver as pycsp3_solver
+    from pycsp3.compiler import Compilation
+    from pycsp3.parser.xparser import ParserXCSP3
+    from pycsp3.solvers.solver import process_options
+    from pycsp3.tools.utilities import ANY
+
+    tmp_filename: str | None = None
 
     solver_type = ACE if solver == "ace" else CHOCO
 
     # Build solver string with options
     solver_str = f"[{solver}"
-    if verbose > 0:
+    if verbose > 0 and not competition_output:
         solver_str += "," + "v" * min(verbose, 3)
     limit_parts: list[str] = []
     if time_limit is not None:
@@ -171,16 +237,148 @@ def _solve_native(
         else:
             options = f"-warm='{warm_str}'"
 
-    compile_target = filename
-    if compile_target is None:
-        compile_target = _resolve_output_dir(output_dir)
+    # Fast path: keep existing behavior when not in competition mode.
+    if not competition_output:
+        compile_target = filename
+        if compile_target is None:
+            compile_target = _resolve_output_dir(output_dir)
 
-    return pycsp3_solve(
-        solver=solver_str,
-        options=options,
-        filename=compile_target,
-        verbose=verbose - 1,  # pycsp3 verbose: -1=quiet, 0=normal, 1+=detailed
-    )
+        return pycsp3_solve(
+            solver=solver_str,
+            options=options,
+            filename=compile_target,
+            verbose=verbose - 1,  # pycsp3 verbose: -1=quiet, 0=normal, 1+=detailed
+        )
+
+    # Competition mode: stream objective progress by tailing native logs.
+    instance_file = filename
+    cop = False
+
+    try:
+        if instance_file is None:
+            tmp_dir = _resolve_output_dir(output_dir)
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".xml", delete=False, dir=tmp_dir
+            ) as tmp:
+                tmp_filename = tmp.name
+            try:
+                result = pycsp3_compile(tmp_filename, verbose=verbose)
+                if result is None:
+                    print("s UNKNOWN", flush=True)
+                    return TypeStatus.UNKNOWN
+                if isinstance(result, tuple):
+                    instance_file, cop = result
+                else:
+                    instance_file = tmp_filename
+            except Exception:
+                print("s UNKNOWN", flush=True)
+                return TypeStatus.UNKNOWN
+
+        # Parse the instance to detect objectives and recover variable order.
+        if str(instance_file).endswith(".xml.lzma"):
+            with lzma.open(instance_file, "rb") as handle:
+                parser = ParserXCSP3(handle)
+        else:
+            parser = ParserXCSP3(instance_file)
+        cop = cop or bool(getattr(parser, "oEntries", []))
+
+        # Ensure the native solver log ends up in a predictable location.
+        pathname = _resolve_output_dir(output_dir)
+        Compilation.pathname = pathname
+
+        _, args, args_recursive = process_options(solver_str)
+
+        solver_obj = pycsp3_solver(solver_type)
+        solver_obj.setting(options)
+
+        from pycsp3_solvers_extra.competition import (
+            emit_competition_output,
+            make_objective_progress_printer,
+        )
+
+        progress_printer = make_objective_progress_printer(parser)
+        missing_impl = threading.Event()
+
+        def _handle_log_line(line: str) -> None:
+            clean = _strip_ansi(line).strip()
+            if not clean:
+                return
+            if "Missing Implementation" in clean:
+                missing_impl.set()
+            if progress_printer is None:
+                return
+            match = _NATIVE_O_RE.match(clean.lstrip())
+            if match:
+                try:
+                    progress_printer.report(int(match.group(1)))
+                except Exception:
+                    return
+
+        stop_event = threading.Event()
+        log_path = _native_log_path(pathname, solver_obj)
+        tail_thread = threading.Thread(
+            target=_tail_native_log,
+            args=(log_path, stop_event),
+            kwargs={"on_line": _handle_log_line},
+            daemon=True,
+        )
+        tail_thread.start()
+
+        try:
+            status = solver_obj.solve(
+                (instance_file, cop),
+                solver_str,
+                args,
+                args_recursive,
+                compiler=True,
+                verbose=-1,
+            )
+        finally:
+            stop_event.set()
+            tail_thread.join(timeout=1.0)
+
+        if missing_impl.is_set():
+            print("s UNSUPPORTED", flush=True)
+            return status
+
+        # Emit final objective value if needed.
+        if progress_printer is not None and status in (TypeStatus.SAT, TypeStatus.OPTIMUM):
+            if getattr(solver_obj, "bound", None) is not None:
+                progress_printer.report(solver_obj.bound)
+
+        solution_dict: dict[str, int | str] | None = None
+        last_solution = getattr(solver_obj, "last_solution", None)
+        if last_solution is not None:
+            solution_dict = {}
+            for var, value in zip(last_solution.variables, last_solution.values):
+                if var is None:
+                    continue
+                if value is ANY:
+                    solution_dict[var.id] = "*"
+                else:
+                    solution_dict[var.id] = int(value) if isinstance(value, bool | int) else value
+
+        class _NativeCallbacks:
+            def __init__(self, solution, bound, printer):
+                self._solution = solution
+                self._bound = bound
+                self._printer = printer
+
+            def get_solution(self):
+                return self._solution
+
+            def get_objective_value(self):
+                return self._bound
+
+            def get_competition_progress_printer(self):
+                return self._printer
+
+        native_callbacks = _NativeCallbacks(solution_dict, getattr(solver_obj, "bound", None), progress_printer)
+        emit_competition_output(parser, native_callbacks, status)
+        return status
+    finally:
+        if tmp_filename is not None and os.path.exists(tmp_filename):
+            os.unlink(tmp_filename)
 
 
 def _solve_extra(
@@ -193,6 +391,8 @@ def _solve_extra(
     hints: dict[str, int] | None,
     output_dir: str | os.PathLike | None,
     subsolver: str | None = None,
+    *,
+    competition_output: bool = False,
 ) -> TypeStatus:
     """Solve with extra backends using XCSP3 parsing."""
     # Get the appropriate backend
@@ -218,15 +418,23 @@ def _solve_extra(
             if result is None:
                 if verbose > 0:
                     print("Error: Failed to compile model")
+                if competition_output:
+                    print("s UNKNOWN", flush=True)
                 return TypeStatus.UNKNOWN
             xcsp3_file = result[0] if isinstance(result, tuple) else tmp_filename
         except Exception as e:
             if verbose > 0:
                 print(f"Error during compilation: {e}")
+            if competition_output:
+                print("s UNKNOWN", flush=True)
             return TypeStatus.UNKNOWN
     else:
         xcsp3_file = filename
         tmp_filename = None
+
+    parser = None
+    callbacks = None
+    progress_printer = None
 
     try:
         # Create backend callbacks instance
@@ -254,6 +462,15 @@ def _solve_extra(
         # Parse the XML file
         parser = ParserXCSP3(xcsp3_file)
 
+        if competition_output:
+            from pycsp3_solvers_extra.competition import make_objective_progress_printer
+
+            progress_printer = make_objective_progress_printer(parser)
+            if progress_printer is not None:
+                set_progress_printer = getattr(callbacks, "set_competition_progress_printer", None)
+                if callable(set_progress_printer):
+                    set_progress_printer(progress_printer)
+
         # Create callbacker to invoke callbacks
         callbacker = CallbackerXCSP3(parser, callbacks)
         callbacker.load_instance()
@@ -273,11 +490,31 @@ def _solve_extra(
 
         _update_pycsp3_solver_state(callbacks, status)
 
+        if competition_output:
+            if progress_printer is not None and status in (TypeStatus.SAT, TypeStatus.OPTIMUM):
+                final_objective = callbacks.get_objective_value()
+                if final_objective is not None:
+                    progress_printer.report(final_objective)
+            from pycsp3_solvers_extra.competition import emit_competition_output
+            emit_competition_output(parser, callbacks, status)
+
         return status
 
+    except NotImplementedError as e:
+        if verbose > 0:
+            print(f"Unsupported feature: {e}")
+        status = TypeStatus.UNKNOWN
+        if competition_output:
+            print("s UNSUPPORTED", flush=True)
+            return status
+        raise
     except Exception as e:
         if verbose > 0:
             print(f"Error during solving: {e}")
+        if competition_output:
+            # Ensure a valid status line is always emitted in competition mode.
+            print("s UNKNOWN", flush=True)
+            return TypeStatus.UNKNOWN
         raise
 
     finally:

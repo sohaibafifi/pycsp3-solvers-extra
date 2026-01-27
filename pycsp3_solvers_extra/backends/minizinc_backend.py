@@ -6,6 +6,7 @@ XCSP3 constraints to MiniZinc model and solves using minizinc-python.
 """
 
 
+import asyncio
 from typing import Any
 
 from pycsp3.classes.auxiliary.conditions import Condition
@@ -933,6 +934,7 @@ class MiniZincCallbacks(BaseCallbacks):
 
     def obj_minimize(self, term: Variable | Node):
         """Set minimization objective."""
+        self._mark_objective()
         if isinstance(term, Variable):
             obj_expr = self.vars[term.id]
         else:
@@ -943,6 +945,7 @@ class MiniZincCallbacks(BaseCallbacks):
 
     def obj_maximize(self, term: Variable | Node):
         """Set maximization objective."""
+        self._mark_objective()
         if isinstance(term, Variable):
             obj_expr = self.vars[term.id]
         else:
@@ -953,10 +956,12 @@ class MiniZincCallbacks(BaseCallbacks):
 
     def obj_minimize_special(self, obj_type: TypeObj, terms: list[Variable] | list[Node], coefficients: list[int] | None):
         """Set special minimization objective (SUM, MAX, etc.)."""
+        self._mark_objective()
         self._set_special_objective("minimize", obj_type, terms, coefficients)
 
     def obj_maximize_special(self, obj_type: TypeObj, terms: list[Variable] | list[Node], coefficients: list[int] | None):
         """Set special maximization objective (SUM, MAX, etc.)."""
+        self._mark_objective()
         self._set_special_objective("maximize", obj_type, terms, coefficients)
 
     def _set_special_objective(self, sense: str, obj_type: TypeObj, terms: list, coefficients: list[int] | None):
@@ -1089,7 +1094,25 @@ class MiniZincCallbacks(BaseCallbacks):
                 n_sols = None if self.sols == "all" else self.sols
                 result = instance.solve(all_solutions=True, **solve_kwargs)
             else:
-                result = instance.solve(**solve_kwargs)
+                progress_mode = self._has_objective and self.get_competition_progress_printer() is not None
+                if progress_mode:
+                    async def _solve_with_progress():
+                        last_result = None
+                        async for res in instance.solutions(
+                            intermediate_solutions=True,
+                            **solve_kwargs,
+                        ):
+                            last_result = res
+                            sol = getattr(res, "solution", None)
+                            if sol is not None:
+                                obj_val = getattr(sol, "objective", None)
+                                if obj_val is not None:
+                                    self._report_objective_progress(obj_val)
+                        return last_result
+
+                    result = asyncio.run(_solve_with_progress())
+                else:
+                    result = instance.solve(**solve_kwargs)
         except Exception as e:
             if self.verbose > 0:
                 print(f"MiniZinc solve error: {e}")

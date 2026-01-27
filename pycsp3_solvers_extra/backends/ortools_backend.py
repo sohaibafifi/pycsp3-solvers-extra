@@ -1394,6 +1394,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def obj_minimize(self, term: Variable | Node):
         """Minimize objective."""
+        self._mark_objective()
         if isinstance(term, Variable):
             expr = self.vars[term.id]
         else:
@@ -1404,6 +1405,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def obj_maximize(self, term: Variable | Node):
         """Maximize objective."""
+        self._mark_objective()
         if isinstance(term, Variable):
             expr = self.vars[term.id]
         else:
@@ -1414,6 +1416,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def obj_minimize_special(self, obj_type: TypeObj, terms: list[Variable] | list[Node], coefficients: None | list[int]):
         """Minimize special objective (sum, product, etc.)."""
+        self._mark_objective()
         exprs = [self._as_bool_var(e) for e in self._get_var_or_node_list(terms)]
 
         if obj_type == TypeObj.SUM:
@@ -1448,6 +1451,7 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def obj_maximize_special(self, obj_type: TypeObj, terms: list[Variable] | list[Node], coefficients: None | list[int]):
         """Maximize special objective."""
+        self._mark_objective()
         exprs = [self._as_bool_var(e) for e in self._get_var_or_node_list(terms)]
 
         if obj_type == TypeObj.SUM:
@@ -1512,7 +1516,27 @@ class ORToolsCallbacks(BaseCallbacks):
         self._all_solutions = []
         self._objective_value = None
         self._log(1, "Starting OR-Tools solver...")
-        status = self.solver.Solve(self.model)
+
+        progress_callback = None
+        if self.model.HasObjective() and self.get_competition_progress_printer() is not None:
+            class ObjectiveProgressCallback(cp_model.CpSolverSolutionCallback):
+                def __init__(self, outer):
+                    super().__init__()
+                    self._outer = outer
+
+                def on_solution_callback(self):
+                    try:
+                        obj_value = self.ObjectiveValue()
+                    except Exception:
+                        return
+                    self._outer._report_objective_progress(obj_value)
+
+            progress_callback = ObjectiveProgressCallback(self)
+
+        if progress_callback is not None:
+            status = self.solver.Solve(self.model, progress_callback)
+        else:
+            status = self.solver.Solve(self.model)
 
         if status == cp_model.OPTIMAL:
             self._extract_solution()

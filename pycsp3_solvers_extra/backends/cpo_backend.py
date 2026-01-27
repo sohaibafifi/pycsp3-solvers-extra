@@ -25,6 +25,7 @@ from pycsp3.classes.nodes import TypeNode
 try:
     from docplex.cp.model import CpoModel
     from docplex.cp.solution import CpoSolveResult
+    from docplex.cp.solver.solver_listener import CpoSolverListener
     import docplex.cp.modeler as modeler
     from docplex.cp.catalog import Type_BoolExpr
     from docplex.cp.config import context as cpo_context
@@ -33,6 +34,7 @@ except ImportError:
     CPO_AVAILABLE = False
     cpo_context = None
     Type_BoolExpr = None
+    CpoSolverListener = None
 
 
 def _configure_cpoptimizer():
@@ -1025,6 +1027,7 @@ class CPOCallbacks(BaseCallbacks):
 
     def obj_minimize(self, term: Variable | Node):
         """Minimize a simple objective (single term)."""
+        self._mark_objective()
         if isinstance(term, Variable):
             expr = self.vars[term.id]
         else:
@@ -1035,6 +1038,7 @@ class CPOCallbacks(BaseCallbacks):
 
     def obj_maximize(self, term: Variable | Node):
         """Maximize a simple objective (single term)."""
+        self._mark_objective()
         if isinstance(term, Variable):
             expr = self.vars[term.id]
         else:
@@ -1054,6 +1058,7 @@ class CPOCallbacks(BaseCallbacks):
     def _set_objective_special(self, obj_type: TypeObj, terms: list[Variable] | list[Node],
                                coefficients: None | list[int], minimize: bool):
         """Set optimization objective for special types."""
+        self._mark_objective()
         exprs = self._get_var_or_node_list(terms)
 
         if obj_type == TypeObj.SUM:
@@ -1106,6 +1111,7 @@ class CPOCallbacks(BaseCallbacks):
         """Solve the model and return status."""
         self._log(1, "Starting CPO solver...")
         self._objective_value = None
+        use_search_next = False
 
         # Set objective if any
         if self._objective_expr is not None:
@@ -1113,6 +1119,27 @@ class CPOCallbacks(BaseCallbacks):
                 self.model.minimize(self._objective_expr)
             else:
                 self.model.maximize(self._objective_expr)
+
+        # Attach a solver listener for objective progression if requested.
+        if self._objective_expr is not None and self.get_competition_progress_printer() is not None and CpoSolverListener is not None:
+            progress_printer = self.get_competition_progress_printer()
+            use_search_next = True
+
+            class _ObjectiveProgressListener(CpoSolverListener):
+                def result_found(self, solver, sres):  # noqa: N802 - docplex naming
+                    try:
+                        if sres is None or not sres.is_solution():
+                            return
+                        obj_val = sres.get_objective_value()
+                        if obj_val is not None:
+                            progress_printer.report(obj_val)
+                    except Exception:
+                        return
+
+            try:
+                self.model.add_solver_listener(_ObjectiveProgressListener())
+            except Exception:
+                pass
 
         # Configure solver parameters
         params = {}
@@ -1128,6 +1155,9 @@ class CPOCallbacks(BaseCallbacks):
         if self.verbose <= 0:
             params['LogVerbosity'] = "Quiet"
             params['log_output'] = None
+        if use_search_next:
+            # Ensure listeners see intermediate solutions for objective progression.
+            params["solve_with_search_next"] = True
 
         try:
             if self.sols is not None and self._objective_expr is None:

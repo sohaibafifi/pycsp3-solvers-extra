@@ -921,6 +921,7 @@ class PumpkinCallbacks(BaseCallbacks):
 
     def obj_minimize(self, term: Variable | Node):
         """Set minimization objective for a single term."""
+        self._mark_objective()
         expr = self._get_pumpkin_var(term)
         self._objective_var = expr
         self._solver_objective_var = expr
@@ -930,6 +931,7 @@ class PumpkinCallbacks(BaseCallbacks):
 
     def obj_maximize(self, term: Variable | Node):
         """Set maximization objective for a single term."""
+        self._mark_objective()
         expr = self._get_pumpkin_var(term)
         self._objective_var = expr
         neg_obj = self.model.new_integer_variable(-10**9, 10**9, name="neg_objective")
@@ -943,6 +945,7 @@ class PumpkinCallbacks(BaseCallbacks):
 
     def obj_minimize_special(self, obj_type: TypeObj, lst: list[Variable] | list[Node], coefficients: list[int] | None):
         """Set minimization objective."""
+        self._mark_objective()
         exprs = self._get_pumpkin_var_list(lst)
 
         if obj_type == TypeObj.SUM:
@@ -973,6 +976,7 @@ class PumpkinCallbacks(BaseCallbacks):
 
     def obj_maximize_special(self, obj_type: TypeObj, lst: list[Variable] | list[Node], coefficients: list[int] | None):
         """Set maximization objective."""
+        self._mark_objective()
         exprs = self._get_pumpkin_var_list(lst)
 
         if obj_type == TypeObj.SUM:

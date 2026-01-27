@@ -88,6 +88,8 @@ class BaseCallbacks(Callbacks):
         self._solution: dict[str, int] | None = None
         self._status: TypeStatus = TypeStatus.UNKNOWN
         self._objective_value = None
+        self._has_objective: bool = False
+        self._competition_o_printer = None
 
     # ========== Abstract methods to implement ==========
 
@@ -120,6 +122,30 @@ class BaseCallbacks(Callbacks):
         The hints dict maps variable IDs to suggested values.
         """
         pass  # Default: no-op. Override in subclasses.
+
+    # ========== Competition Output Hooks ==========
+
+    def set_competition_progress_printer(self, printer) -> None:
+        """Attach an objective progress printer (for streaming 'o ' lines)."""
+        self._competition_o_printer = printer
+
+    def get_competition_progress_printer(self):
+        """Return the attached objective progress printer, if any."""
+        return self._competition_o_printer
+
+    def _mark_objective(self) -> None:
+        """Record that the instance has an objective."""
+        self._has_objective = True
+
+    def _report_objective_progress(self, value) -> None:
+        """Emit an objective progress update if a printer is attached."""
+        printer = self._competition_o_printer
+        if printer is not None:
+            try:
+                printer.report(value)
+            except Exception:
+                # Never let progress reporting interfere with solving.
+                pass
 
     # ========== Expression tree translation ==========
 
