@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections import defaultdict, deque
+from typing import Iterable
+
 from pycsp3.classes.auxiliary.conditions import Condition
 from pycsp3.classes.auxiliary.enums import TypeConditionOperator
 from pycsp3.classes.main.variables import VariableInteger, Domain
@@ -46,6 +49,17 @@ def _decompose_common(
         lst, values, k = call.args
         condition = Condition.build_condition((TypeConditionOperator.EQ, k))
         return [ConstraintCall("ctr_count", (lst, values, condition), {})]
+
+    if call.name == "ctr_mdd":
+        scope, transitions = call.args
+        start_state, final_state, layered_transitions = _prepare_mdd(scope, transitions)
+        return [
+            ConstraintCall(
+                "ctr_regular",
+                (scope, layered_transitions, start_state, [final_state]),
+                {},
+            )
+        ]
 
     if call.name == "ctr_cardinality":
         lst, values, occurs, closed = call.args
@@ -110,3 +124,151 @@ def _decompose_common(
         ]
 
     return None
+
+
+def _domain_values(var) -> list[int]:
+    values = var.dom.all_values()
+    if values is None:
+        raise ValueError("MDD decomposition requires finite integer domains")
+    values = list(values)
+    if not all(isinstance(v, int) for v in values):
+        raise NotImplementedError("MDD decomposition currently supports only integer domains")
+    return values
+
+
+def _expand_label(label, domain_values: list[int], domain_set: set[int]) -> Iterable[int]:
+    if isinstance(label, int):
+        return (label,) if label in domain_set else ()
+
+    if isinstance(label, Condition):
+        candidates = list(label.filtering(domain_values))
+    elif isinstance(label, range):
+        candidates = list(label)
+    elif isinstance(label, (list, tuple, set, frozenset)):
+        expanded: list[int] = []
+        for item in label:
+            expanded.extend(_expand_label(item, domain_values, domain_set))
+        candidates = expanded
+    else:
+        raise NotImplementedError(f"Unsupported MDD transition label type: {type(label).__name__}")
+
+    filtered: list[int] = []
+    for value in candidates:
+        if not isinstance(value, int):
+            raise NotImplementedError("MDD labels must resolve to integer values")
+        if value in domain_set:
+            filtered.append(value)
+    # Remove duplicates while preserving order
+    seen: set[int] = set()
+    return tuple(v for v in filtered if not (v in seen or seen.add(v)))
+
+
+def _prepare_mdd(scope: list, transitions: list) -> tuple[str, str, list[tuple[str, int, str]]]:
+    if not scope:
+        raise ValueError("MDD constraint requires a non-empty scope")
+    if not transitions:
+        raise ValueError("MDD constraint requires at least one transition")
+
+    outgoing: dict[str, list[tuple[str, object, str]]] = defaultdict(list)
+    indegree: dict[str, int] = defaultdict(int)
+    outdegree: dict[str, int] = defaultdict(int)
+    states: set[str] = set()
+
+    for src, label, dst in transitions:
+        if not isinstance(src, str) or not isinstance(dst, str):
+            raise TypeError("MDD states must be strings")
+        states.add(src)
+        states.add(dst)
+        outgoing[src].append((src, label, dst))
+        indegree[dst] += 1
+        outdegree[src] += 1
+        # Ensure keys exist for degree lookups
+        indegree[src] += 0
+        outdegree[dst] += 0
+
+    roots = [s for s in states if indegree[s] == 0]
+    if len(roots) != 1:
+        raise ValueError(f"MDD must have exactly one root (found {len(roots)})")
+    root = roots[0]
+
+    # Restrict to states reachable from the root
+    reachable: set[str] = set()
+    queue: deque[str] = deque([root])
+    while queue:
+        state = queue.popleft()
+        if state in reachable:
+            continue
+        reachable.add(state)
+        for _, _, dst in outgoing.get(state, ()):
+            if dst not in reachable:
+                queue.append(dst)
+
+    reachable_transitions = [
+        (src, label, dst) for (src, label, dst) in transitions if src in reachable and dst in reachable
+    ]
+
+    # Recompute outdegree on reachable subgraph to find the terminal
+    reachable_outdegree: dict[str, int] = defaultdict(int)
+    for src, _, dst in reachable_transitions:
+        reachable_outdegree[src] += 1
+        reachable_outdegree[dst] += 0
+
+    terminals = [s for s in reachable if reachable_outdegree[s] == 0]
+    if len(terminals) != 1:
+        raise ValueError(f"MDD must have exactly one terminal (found {len(terminals)})")
+    terminal = terminals[0]
+
+    # Infer unique layer for each state; layered MDDs must be consistent.
+    layers: dict[str, int] = {root: 0}
+    queue = deque([root])
+    while queue:
+        state = queue.popleft()
+        layer = layers[state]
+        for _, _, dst in outgoing.get(state, ()):
+            if dst not in reachable:
+                continue
+            expected = layer + 1
+            if dst in layers:
+                if layers[dst] != expected:
+                    raise ValueError(
+                        "MDD is not properly layered: a state is reached at multiple depths"
+                    )
+                continue
+            layers[dst] = expected
+            queue.append(dst)
+
+    if terminal not in layers:
+        raise ValueError("MDD terminal is not reachable from the root")
+
+    terminal_layer = layers[terminal]
+    if terminal_layer != len(scope):
+        raise ValueError(
+            f"MDD depth ({terminal_layer}) must match scope length ({len(scope)})"
+        )
+
+    # Precompute domain values per layer
+    domain_info = []
+    for var in scope:
+        values = _domain_values(var)
+        domain_info.append((values, set(values)))
+
+    layered_transitions: list[tuple[str, int, str]] = []
+    for src, label, dst in reachable_transitions:
+        if src not in layers or dst not in layers:
+            continue
+        src_layer = layers[src]
+        dst_layer = layers[dst]
+        if dst_layer != src_layer + 1:
+            raise ValueError("MDD transitions must go from layer i to layer i+1")
+        if src_layer >= len(scope):
+            raise ValueError("MDD contains transitions beyond the scope length")
+
+        domain_values, domain_set = domain_info[src_layer]
+        symbols = _expand_label(label, domain_values, domain_set)
+        for symbol in symbols:
+            layered_transitions.append((src, symbol, dst))
+
+    if not layered_transitions:
+        raise ValueError("MDD decomposition produced no valid transitions")
+
+    return root, terminal, layered_transitions

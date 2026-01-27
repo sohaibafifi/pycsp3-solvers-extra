@@ -624,3 +624,41 @@ class TestRegularConstraint:
 
         status = solve(solver="ortools")
         assert status == UNSAT
+
+
+class TestMDDConstraint:
+    """Tests for MDD constraint (decomposed to regular)."""
+
+    @staticmethod
+    def _exactly_one_one_mdd():
+        # Layered MDD enforcing exactly one '1' in a length-3 binary sequence.
+        transitions = [
+            ("r", 0, "a"),
+            ("r", 1, "b"),
+            ("a", 0, "c"),
+            ("a", 1, "d"),
+            ("b", 0, "d"),
+            ("b", 1, "e"),
+            ("c", 1, "t"),
+            ("d", 0, "t"),
+            ("e", 2, "t"),  # Dead transition to keep a single terminal
+        ]
+        return MDD(transitions)
+
+    def test_mdd_exactly_one_one_sat(self):
+        x = VarArray(size=3, dom={0, 1})
+        satisfy(x in self._exactly_one_one_mdd())
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        assert sum(sol) == 1
+
+    def test_mdd_exactly_one_one_unsat(self):
+        x = VarArray(size=3, dom={0, 1})
+        satisfy(x in self._exactly_one_one_mdd())
+        satisfy(Sum(x) >= 2)
+
+        status = solve(solver="ortools")
+        assert status == UNSAT
