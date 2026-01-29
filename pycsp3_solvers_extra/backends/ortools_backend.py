@@ -601,6 +601,58 @@ class ORToolsCallbacks(BaseCallbacks):
         in_set = self._in_set(val, set_vals)
         return in_set.Not()
 
+    def _nooverlap_length_presence(self, length: int | Variable, name: str, zero_ignored: bool):
+        """Return presence literal for a length, or None/False for always present/absent."""
+        if not zero_ignored:
+            return None
+        if isinstance(length, int):
+            return False if length == 0 else None
+        if not isinstance(length, Variable):
+            return None
+
+        min_len = length.dom.smallest_value()
+        max_len = length.dom.greatest_value()
+        if max_len <= 0:
+            return False
+        if min_len >= 1:
+            return None
+
+        length_var = self.vars[length.id]
+        present = self.model.NewBoolVar(f"{name}_present")
+        self.model.Add(length_var >= 1).OnlyEnforceIf(present)
+        self.model.Add(length_var <= 0).OnlyEnforceIf(present.Not())
+        return present
+
+    def _nooverlap_interval(self, start_var, length, name, presence=None):
+        """Create an interval (optional if presence is set)."""
+        start = self.vars[start_var.id] if isinstance(start_var, Variable) else start_var
+        if isinstance(length, int):
+            end = start + length
+            if presence is None:
+                return self.model.NewIntervalVar(start, length, end, name)
+            return self.model.NewOptionalIntervalVar(start, length, end, presence, name)
+
+        length_var = self.vars[length.id] if isinstance(length, Variable) else length
+        if isinstance(start_var, Variable):
+            start_lb = start_var.dom.smallest_value()
+            start_ub = start_var.dom.greatest_value()
+        else:
+            start_lb = start_ub = int(start_var)
+
+        if isinstance(length, Variable):
+            length_lb = length.dom.smallest_value()
+            length_ub = length.dom.greatest_value()
+        else:
+            length_lb = length_ub = int(length)
+
+        end_lb = start_lb + length_lb
+        end_ub = start_ub + length_ub
+        end = self.model.NewIntVar(end_lb, end_ub, f"{name}_end")
+        self.model.Add(end == start + length_var)
+        if presence is None:
+            return self.model.NewIntervalVar(start, length_var, end, name)
+        return self.model.NewOptionalIntervalVar(start, length_var, end, presence, name)
+
     # ========== Constraint callbacks ==========
 
     def ctr_intension(self, scope: list[Variable], tree: Node):
@@ -1097,25 +1149,97 @@ class ORToolsCallbacks(BaseCallbacks):
         intervals = []
 
         for i in range(n):
-            start = self.vars[origins[i].id]
-            if isinstance(lengths[i], int):
-                length = lengths[i]
-            else:
-                length = self.vars[lengths[i].id]
-
-            # Create interval variable (use explicit end var if length is variable)
-            if isinstance(lengths[i], int):
-                end = start + length
-            else:
-                end_lb = origins[i].dom.smallest_value() + lengths[i].dom.smallest_value()
-                end_ub = origins[i].dom.greatest_value() + lengths[i].dom.greatest_value()
-                end = self.model.NewIntVar(end_lb, end_ub, f"interval_{i}_end")
-                self.model.Add(end == start + length)
-            interval = self.model.NewIntervalVar(start, length, end, f"interval_{i}")
+            presence = self._nooverlap_length_presence(lengths[i], f"interval_{i}", zero_ignored)
+            if presence is False:
+                continue
+            interval = self._nooverlap_interval(origins[i], lengths[i], f"interval_{i}", presence)
             intervals.append(interval)
 
-        self.model.AddNoOverlap(intervals)
-        self._log(2, f"Added NoOverlap constraint on {n} intervals")
+        if intervals:
+            self.model.AddNoOverlap(intervals)
+        self._log(2, f"Added NoOverlap constraint on {len(intervals)} intervals")
+
+    def ctr_nooverlap_mixed(
+        self,
+        origins1: list[Variable],
+        origins2: list[Variable],
+        lengths1: list[int] | list[Variable],
+        lengths2: list[int] | list[Variable],
+        zero_ignored: bool,
+    ):
+        """NoOverlap constraint (2D) with mixed length types."""
+        origins = list(zip(origins1, origins2))
+        lengths = list(zip(lengths1, lengths2))
+        return self.ctr_nooverlap_multi(origins, lengths, zero_ignored)
+
+    def ctr_nooverlap_multi(self, origins: list[list], lengths: list[list], zero_ignored: bool):
+        """NoOverlap constraint (multi-dimensional)."""
+        n = len(origins)
+        if n == 0:
+            return
+        dim = len(origins[0])
+
+        def _box_presence(lengths_i, name):
+            if not zero_ignored:
+                return None
+            presences = []
+            for d, length in enumerate(lengths_i):
+                presence = self._nooverlap_length_presence(length, f"{name}_d{d}", True)
+                if presence is False:
+                    return False
+                if presence is not None:
+                    presences.append(presence)
+            if not presences:
+                return None
+            if len(presences) == 1:
+                return presences[0]
+            present = self.model.NewBoolVar(f"{name}_present")
+            self.model.AddBoolAnd(presences).OnlyEnforceIf(present)
+            self.model.AddBoolOr([p.Not() for p in presences] + [present])
+            return present
+
+        if dim == 2:
+            x_intervals = []
+            y_intervals = []
+            for i in range(n):
+                presence = _box_presence(lengths[i], f"rect_{i}")
+                if presence is False:
+                    continue
+                x_intervals.append(self._nooverlap_interval(origins[i][0], lengths[i][0], f"rect_{i}_x", presence))
+                y_intervals.append(self._nooverlap_interval(origins[i][1], lengths[i][1], f"rect_{i}_y", presence))
+            if x_intervals:
+                self.model.AddNoOverlap2D(x_intervals, y_intervals)
+                self._log(2, f"Added NoOverlap2D constraint on {len(x_intervals)} rectangles")
+            return
+
+        # Generic decomposition for dimension > 2
+        presences = []
+        for i in range(n):
+            presences.append(_box_presence(lengths[i], f"box_{i}"))
+        for i in range(n):
+            if presences[i] is False:
+                continue
+            for j in range(i + 1, n):
+                if presences[j] is False:
+                    continue
+                disjuncts = []
+                if presences[i] is not None:
+                    disjuncts.append(presences[i].Not())
+                if presences[j] is not None:
+                    disjuncts.append(presences[j].Not())
+                for d in range(dim):
+                    start_i = self.vars[origins[i][d].id] if isinstance(origins[i][d], Variable) else origins[i][d]
+                    start_j = self.vars[origins[j][d].id] if isinstance(origins[j][d], Variable) else origins[j][d]
+                    len_i = self.vars[lengths[i][d].id] if isinstance(lengths[i][d], Variable) else lengths[i][d]
+                    len_j = self.vars[lengths[j][d].id] if isinstance(lengths[j][d], Variable) else lengths[j][d]
+
+                    b_ij = self.model.NewBoolVar(f"noov_{i}_{j}_{d}_ij")
+                    b_ji = self.model.NewBoolVar(f"noov_{i}_{j}_{d}_ji")
+                    self.model.Add(start_i + len_i <= start_j).OnlyEnforceIf(b_ij)
+                    self.model.Add(start_j + len_j <= start_i).OnlyEnforceIf(b_ji)
+                    disjuncts.extend([b_ij, b_ji])
+                self.model.AddBoolOr(disjuncts)
+        self._log(2, f"Added decomposed NoOverlap constraint on {n} boxes in {dim}D")
 
     def ctr_cumulative(self, origins: list[Variable], lengths: list[int] | list[Variable],
                        heights: list[int] | list[Variable], condition: Condition):

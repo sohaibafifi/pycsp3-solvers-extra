@@ -262,6 +262,45 @@ class TestElementConstraint:
         assert value(m[row][col]) == 5
 
 
+class TestNoOverlapConstraints:
+    """Tests for NoOverlap constraints."""
+
+    def test_nooverlap_2d_constant_lengths(self):
+        """Test 2D NoOverlap with constant rectangle sizes."""
+        x = VarArray(size=2, dom=range(5))
+        y = VarArray(size=2, dom=range(5))
+        origins = list(zip(x, y))
+        lengths = [(2, 2), (2, 2)]
+
+        satisfy(NoOverlap(origins=origins, lengths=lengths))
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+
+        sol_x = values(x)
+        sol_y = values(y)
+        assert (
+            sol_x[0] + 2 <= sol_x[1]
+            or sol_x[1] + 2 <= sol_x[0]
+            or sol_y[0] + 2 <= sol_y[1]
+            or sol_y[1] + 2 <= sol_y[0]
+        ), "Rectangles overlap"
+
+    def test_nooverlap_zero_ignored_variable_length(self):
+        """Test zero_ignored with variable length in 2D NoOverlap."""
+        x = VarArray(size=2, dom=range(1))  # fixed at 0
+        y = VarArray(size=2, dom=range(1))  # fixed at 0
+        w1 = Var(dom=[0, 2])
+        origins = list(zip(x, y))
+        lengths = [(2, 2), (w1, 2)]
+
+        satisfy(NoOverlap(origins=origins, lengths=lengths, zero_ignored=True))
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+        assert value(w1) == 0
+
+
 class TestMinMaxConstraints:
     """Tests for Minimum/Maximum constraints."""
 

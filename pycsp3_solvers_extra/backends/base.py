@@ -346,13 +346,21 @@ class BaseCallbacks(Callbacks):
 
         elif node.type == TypeNode.IN:
             val = self.translate_node(node.cnt[0])
-            # sons[1] is a SET node
-            set_vals = [self.translate_node(s) for s in node.cnt[1].sons]
+            # node.cnt[1] is a SET node; older pycsp3 used "sons" for children
+            set_node = node.cnt[1]
+            set_children = getattr(set_node, "sons", None)
+            if set_children is None:
+                set_children = set_node.cnt if isinstance(set_node, Node) else set_node
+            set_vals = [self.translate_node(s) for s in set_children]
             return self._in_set(val, set_vals)
 
         elif node.type == TypeNode.NOTIN:
             val = self.translate_node(node.cnt[0])
-            set_vals = [self.translate_node(s) for s in node.cnt[1].sons]
+            set_node = node.cnt[1]
+            set_children = getattr(set_node, "sons", None)
+            if set_children is None:
+                set_children = set_node.cnt if isinstance(set_node, Node) else set_node
+            set_vals = [self.translate_node(s) for s in set_children]
             return self._not_in_set(val, set_vals)
 
         elif node.type == TypeNode.SET:
