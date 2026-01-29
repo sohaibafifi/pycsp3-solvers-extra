@@ -137,6 +137,21 @@ class TestTableConstraints:
         vx, vy = value(x), value(y)
         assert (vx, vy) in [(1, 2), (2, 3), (3, 1)]
 
+    def test_table_starred(self):
+        """Test starred table constraint (ANY values)."""
+        x = VarArray(size=3, dom=range(3))
+        supports = [(0, 0, ANY), (1, ANY, 1)]
+        satisfy(Table(scope=x, supports=supports))
+
+        status = solve(solver="ortools")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        assert (
+            (sol[0] == 0 and sol[1] == 0)
+            or (sol[0] == 1 and sol[2] == 1)
+        )
+
 
 class TestCountingConstraints:
     """Tests for counting constraints."""

@@ -13,6 +13,7 @@ from ortools.sat.python import cp_model
 import ortools.sat.python.cp_model_helper as cmh
 
 from pycsp3.classes.auxiliary.conditions import Condition
+from pycsp3.classes.auxiliary.tables import to_ordinary_table
 from pycsp3.classes.auxiliary.enums import (
     TypeConditionOperator,
     TypeArithmeticOperator,
@@ -28,6 +29,7 @@ from pycsp3.classes.main.variables import Variable
 from pycsp3.classes.nodes import Node, TypeNode
 
 from pycsp3_solvers_extra.backends.base import BaseCallbacks
+from pycsp3.tools.utilities import ANY
 
 
 class ORToolsCallbacks(BaseCallbacks):
@@ -685,6 +687,16 @@ class ORToolsCallbacks(BaseCallbacks):
     def ctr_extension(self, scope: list[Variable], tuples: list, positive: bool, flags: set[str]):
         """Table constraint (allowed/forbidden assignments)."""
         vars_list = self._get_var_list(scope)
+        if tuples is None:
+            return
+
+        needs_expansion = any(
+            (v == ANY) or not isinstance(v, int) for t in tuples for v in t
+        )
+        if needs_expansion:
+            doms = [v.dom for v in scope]
+            tuples = to_ordinary_table(tuples, doms)
+
         if positive:
             self.model.AddAllowedAssignments(vars_list, tuples)
         else:
