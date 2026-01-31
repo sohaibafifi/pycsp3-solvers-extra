@@ -453,7 +453,7 @@ wheels = [
 
 [[package]]
 name = "pycsp3-solvers-extra"
-version = "0.5.0"
+version = "0.7.1"
 source = { editable = "." }
 dependencies = [
     { name = "pycsp3" },

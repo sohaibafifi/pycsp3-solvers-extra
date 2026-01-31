@@ -14,7 +14,9 @@ from typing import Any
 
 from pycsp3.classes.auxiliary.enums import TypeStatus, TypeConditionOperator, TypeObj, TypeOrderedOperator
 from pycsp3.classes.auxiliary.conditions import Condition
+from pycsp3.classes.auxiliary.tables import to_ordinary_table
 from pycsp3.classes.nodes import Node
+from pycsp3.tools.utilities import ANY
 
 from pycsp3_solvers_extra.backends.base import BaseCallbacks
 
@@ -416,6 +418,17 @@ class CPOCallbacks(BaseCallbacks):
     def ctr_extension(self, scope: list[Variable], tuples: list, positive: bool, flags: set[str]):
         """Table constraint."""
         vars_list = self._get_var_list(scope)
+        if tuples is None:
+            return
+
+        # Expand starred tuples (ANY values)
+        needs_expansion = any(
+            (v == ANY) or not isinstance(v, int) for t in tuples for v in t
+        )
+        if needs_expansion:
+            doms = [v.dom for v in scope]
+            tuples = to_ordinary_table(tuples, doms)
+
         if positive:
             self.model.add(modeler.allowed_assignments(vars_list, tuples))
         else:
@@ -750,6 +763,59 @@ class CPOCallbacks(BaseCallbacks):
 
         self.model.add(modeler.no_overlap(intervals))
         self._log(2, f"Added NoOverlap constraint on {len(intervals)} intervals")
+
+    def ctr_nooverlap_mixed(
+        self,
+        origins1: list[Variable],
+        origins2: list[Variable],
+        lengths1: list[int] | list[Variable],
+        lengths2: list[int] | list[Variable],
+        zero_ignored: bool,
+    ):
+        """NoOverlap constraint (2D) with mixed length types."""
+        origins = list(zip(origins1, origins2))
+        lengths = list(zip(lengths1, lengths2))
+        return self.ctr_nooverlap_multi(origins, lengths, zero_ignored)
+
+    def ctr_nooverlap_multi(self, origins: list[list], lengths: list[list], zero_ignored: bool):
+        """NoOverlap constraint (multi-dimensional)."""
+        n = len(origins)
+        if n == 0:
+            return
+        dim = len(origins[0])
+
+        # CPO doesn't have native multi-dimensional no_overlap, decompose to pairwise
+        # For each pair of boxes, at least one dimension must not overlap
+        for i in range(n):
+            for j in range(i + 1, n):
+                disjuncts = []
+                for d in range(dim):
+                    # Get start and length for both boxes in dimension d
+                    start_i = self.vars[origins[i][d].id] if isinstance(origins[i][d], Variable) else origins[i][d]
+                    start_j = self.vars[origins[j][d].id] if isinstance(origins[j][d], Variable) else origins[j][d]
+                    len_i = self.vars[lengths[i][d].id] if isinstance(lengths[i][d], Variable) else lengths[i][d]
+                    len_j = self.vars[lengths[j][d].id] if isinstance(lengths[j][d], Variable) else lengths[j][d]
+
+                    # Check if zero_ignored applies (box i or j has zero length)
+                    if zero_ignored:
+                        if isinstance(lengths[i][d], int) and lengths[i][d] == 0:
+                            disjuncts.append(modeler.true())
+                            continue
+                        if isinstance(lengths[j][d], int) and lengths[j][d] == 0:
+                            disjuncts.append(modeler.true())
+                            continue
+                        if isinstance(lengths[i][d], Variable):
+                            disjuncts.append(len_i <= 0)
+                        if isinstance(lengths[j][d], Variable):
+                            disjuncts.append(len_j <= 0)
+
+                    # Box i ends before box j starts, or vice versa
+                    disjuncts.append(start_i + len_i <= start_j)
+                    disjuncts.append(start_j + len_j <= start_i)
+
+                self.model.add(modeler.logical_or(disjuncts))
+
+        self._log(2, f"Added NoOverlap{dim}D constraint on {n} boxes")
 
     def ctr_circuit(self, lst: list[Variable], start_index: int | None = 0):
         """Circuit constraint (Hamiltonian cycle).

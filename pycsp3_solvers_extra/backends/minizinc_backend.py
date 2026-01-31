@@ -10,6 +10,7 @@ import asyncio
 from typing import Any
 
 from pycsp3.classes.auxiliary.conditions import Condition
+from pycsp3.classes.auxiliary.tables import to_ordinary_table
 from pycsp3.classes.auxiliary.enums import (
     TypeConditionOperator,
     TypeOrderedOperator,
@@ -18,6 +19,7 @@ from pycsp3.classes.auxiliary.enums import (
 )
 from pycsp3.classes.main.variables import Variable
 from pycsp3.classes.nodes import Node, TypeNode
+from pycsp3.tools.utilities import ANY
 
 from pycsp3_solvers_extra.backends.base import BaseCallbacks
 
@@ -398,6 +400,17 @@ class MiniZincCallbacks(BaseCallbacks):
         vars_list = self._get_mzn_var_list(scope)
         vars_str = ", ".join(vars_list)
 
+        if tuples is None:
+            return
+
+        # Expand starred tuples (ANY values)
+        needs_expansion = any(
+            (v == ANY) or not isinstance(v, int) for t in tuples for v in t
+        )
+        if needs_expansion:
+            doms = [v.dom for v in scope]
+            tuples = to_ordinary_table(tuples, doms)
+
         # Build tuple array
         tuple_strs = []
         for t in tuples:
@@ -749,6 +762,89 @@ class MiniZincCallbacks(BaseCallbacks):
 
         self._add_constraint(f"disjunctive([{origins_str}], [{lengths_str}])")
         self._log(2, f"Added nooverlap constraint")
+
+    def ctr_nooverlap_mixed(
+        self,
+        origins1: list[Variable],
+        origins2: list[Variable],
+        lengths1: list[int] | list[Variable],
+        lengths2: list[int] | list[Variable],
+        zero_ignored: bool,
+    ):
+        """NoOverlap constraint (2D) with mixed length types."""
+        origins = list(zip(origins1, origins2))
+        lengths = list(zip(lengths1, lengths2))
+        return self.ctr_nooverlap_multi(origins, lengths, zero_ignored)
+
+    def ctr_nooverlap_multi(self, origins: list[list], lengths: list[list], zero_ignored: bool):
+        """NoOverlap constraint (multi-dimensional) using diffn."""
+        n = len(origins)
+        if n == 0:
+            return
+        dim = len(origins[0])
+
+        if dim == 2:
+            # Use diffn for 2D (non-overlapping rectangles)
+            # diffn([x1,...,xn], [y1,...,yn], [w1,...,wn], [h1,...,hn])
+            x_origins = []
+            y_origins = []
+            x_lengths = []
+            y_lengths = []
+
+            for i in range(n):
+                ox, oy = origins[i]
+                lx, ly = lengths[i]
+
+                if isinstance(ox, Variable):
+                    x_origins.append(self.vars[ox.id])
+                else:
+                    x_origins.append(str(ox))
+
+                if isinstance(oy, Variable):
+                    y_origins.append(self.vars[oy.id])
+                else:
+                    y_origins.append(str(oy))
+
+                if isinstance(lx, Variable):
+                    x_lengths.append(self.vars[lx.id])
+                else:
+                    x_lengths.append(str(lx))
+
+                if isinstance(ly, Variable):
+                    y_lengths.append(self.vars[ly.id])
+                else:
+                    y_lengths.append(str(ly))
+
+            x_str = ", ".join(x_origins)
+            y_str = ", ".join(y_origins)
+            w_str = ", ".join(x_lengths)
+            h_str = ", ".join(y_lengths)
+
+            self._add_constraint(f"diffn([{x_str}], [{y_str}], [{w_str}], [{h_str}])")
+            self._log(2, f"Added NoOverlap2D constraint on {n} rectangles")
+        else:
+            # Generic decomposition for dimension > 2 or == 1
+            for i in range(n):
+                for j in range(i + 1, n):
+                    disjuncts = []
+                    for d in range(dim):
+                        ox_i = origins[i][d]
+                        ox_j = origins[j][d]
+                        lx_i = lengths[i][d]
+                        lx_j = lengths[j][d]
+
+                        start_i = self.vars[ox_i.id] if isinstance(ox_i, Variable) else str(ox_i)
+                        start_j = self.vars[ox_j.id] if isinstance(ox_j, Variable) else str(ox_j)
+                        len_i = self.vars[lx_i.id] if isinstance(lx_i, Variable) else str(lx_i)
+                        len_j = self.vars[lx_j.id] if isinstance(lx_j, Variable) else str(lx_j)
+
+                        # Box i ends before box j starts, or vice versa
+                        disjuncts.append(f"({start_i} + {len_i} <= {start_j})")
+                        disjuncts.append(f"({start_j} + {len_j} <= {start_i})")
+
+                    self._add_constraint(" \\/ ".join(disjuncts))
+
+            self._log(2, f"Added NoOverlap{dim}D constraint on {n} boxes (decomposed)")
 
     def ctr_cumulative(
         self,

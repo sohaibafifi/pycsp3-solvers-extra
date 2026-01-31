@@ -105,6 +105,21 @@ class TestTableConstraints:
         sol = tuple(values(x))
         assert sol in allowed
 
+    def test_table_starred(self):
+        """Test starred table constraint (ANY values)."""
+        x = VarArray(size=3, dom=range(3))
+        supports = [(0, 0, ANY), (1, ANY, 1)]
+        satisfy(Table(scope=x, supports=supports))
+
+        status = solve(solver="pumpkin")
+        assert status in (SAT, OPTIMUM)
+
+        sol = values(x)
+        assert (
+            (sol[0] == 0 and sol[1] == 0)
+            or (sol[0] == 1 and sol[2] == 1)
+        )
+
 
 class TestElementConstraint:
     """Tests for element constraint."""

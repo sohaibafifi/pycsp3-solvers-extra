@@ -33,6 +33,7 @@ from z3 import (
 )
 
 from pycsp3.classes.auxiliary.conditions import Condition
+from pycsp3.classes.auxiliary.tables import to_ordinary_table
 from pycsp3.classes.auxiliary.enums import (
     TypeConditionOperator,
     TypeArithmeticOperator,
@@ -46,6 +47,7 @@ from pycsp3.classes.auxiliary.enums import (
 )
 from pycsp3.classes.main.variables import Variable
 from pycsp3.classes.nodes import Node, TypeNode
+from pycsp3.tools.utilities import ANY
 
 from pycsp3_solvers_extra.backends.base import BaseCallbacks
 
@@ -388,6 +390,16 @@ class Z3Callbacks(BaseCallbacks):
     ):
         """Table constraint (allowed/forbidden assignments)."""
         vars_list = self._get_var_list(scope)
+        if tuples is None:
+            return
+
+        # Expand starred tuples (ANY values)
+        needs_expansion = any(
+            (v == ANY) or not isinstance(v, int) for t in tuples for v in t
+        )
+        if needs_expansion:
+            doms = [v.dom for v in scope]
+            tuples = to_ordinary_table(tuples, doms)
 
         if positive:
             # Allowed tuples: OR of (AND of equalities for each tuple)
@@ -874,6 +886,66 @@ class Z3Callbacks(BaseCallbacks):
                 )
 
         self._log(2, f"Added NoOverlap constraint on {n} intervals")
+
+    def ctr_nooverlap_mixed(
+        self,
+        origins1: list[Variable],
+        origins2: list[Variable],
+        lengths1: list[int] | list[Variable],
+        lengths2: list[int] | list[Variable],
+        zero_ignored: bool,
+    ):
+        """NoOverlap constraint (2D) with mixed length types."""
+        origins = list(zip(origins1, origins2))
+        lengths = list(zip(lengths1, lengths2))
+        return self.ctr_nooverlap_multi(origins, lengths, zero_ignored)
+
+    def ctr_nooverlap_multi(self, origins: list[list], lengths: list[list], zero_ignored: bool):
+        """NoOverlap constraint (multi-dimensional)."""
+        n = len(origins)
+        if n == 0:
+            return
+        dim = len(origins[0])
+
+        # For each pair of boxes, at least one dimension must not overlap
+        for i in range(n):
+            for j in range(i + 1, n):
+                disjuncts = []
+                for d in range(dim):
+                    # Get start and length for both boxes in dimension d
+                    start_i = self.vars[origins[i][d].id] if isinstance(origins[i][d], Variable) else origins[i][d]
+                    start_j = self.vars[origins[j][d].id] if isinstance(origins[j][d], Variable) else origins[j][d]
+
+                    if isinstance(lengths[i][d], int):
+                        len_i = lengths[i][d]
+                    else:
+                        len_i = self.vars[lengths[i][d].id]
+
+                    if isinstance(lengths[j][d], int):
+                        len_j = lengths[j][d]
+                    else:
+                        len_j = self.vars[lengths[j][d].id]
+
+                    # Check if zero_ignored applies
+                    if zero_ignored:
+                        if isinstance(lengths[i][d], int) and lengths[i][d] == 0:
+                            disjuncts.append(True)
+                            continue
+                        if isinstance(lengths[j][d], int) and lengths[j][d] == 0:
+                            disjuncts.append(True)
+                            continue
+                        if isinstance(lengths[i][d], Variable):
+                            disjuncts.append(len_i <= 0)
+                        if isinstance(lengths[j][d], Variable):
+                            disjuncts.append(len_j <= 0)
+
+                    # Box i ends before box j starts, or vice versa
+                    disjuncts.append(start_i + len_i <= start_j)
+                    disjuncts.append(start_j + len_j <= start_i)
+
+                self._add_constraint(Or(disjuncts))
+
+        self._log(2, f"Added NoOverlap{dim}D constraint on {n} boxes")
 
     def ctr_cumulative(
         self,

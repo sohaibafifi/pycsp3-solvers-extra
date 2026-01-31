@@ -21,6 +21,7 @@ from pycsp3.classes.auxiliary.conditions import (
     ConditionVariable,
     ConditionInterval,
 )
+from pycsp3.classes.auxiliary.tables import to_ordinary_table
 from pycsp3.classes.auxiliary.enums import (
     TypeConditionOperator,
     TypeObj,
@@ -29,6 +30,7 @@ from pycsp3.classes.auxiliary.enums import (
 )
 from pycsp3.classes.main.variables import Variable
 from pycsp3.classes.nodes import Node, TypeNode
+from pycsp3.tools.utilities import ANY
 
 from pycsp3_solvers_extra.backends.base import BaseCallbacks
 
@@ -710,6 +712,17 @@ class PumpkinCallbacks(BaseCallbacks):
     def ctr_extension(self, scope: list[Variable], tuples: list[tuple[int, ...]], positive: bool, flags: set[str]):
         """Table constraint."""
         exprs = self._get_pumpkin_var_list(scope)
+        if tuples is None:
+            return
+
+        # Expand starred tuples (ANY values)
+        needs_expansion = any(
+            (v == ANY) or not isinstance(v, int) for t in tuples for v in t
+        )
+        if needs_expansion:
+            doms = [v.dom for v in scope]
+            tuples = to_ordinary_table(tuples, doms)
+
         tuple_list = [list(t) for t in tuples]
 
         if positive:
