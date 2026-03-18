@@ -8,7 +8,7 @@ version = "0.7.2"
 description = "Extra solver backends for pycsp3 (OR-Tools, IBM CPO, Z3, Pumpkin, MiniZinc)"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.14"
 authors = [
     {name = "Sohaib AFIFI"}
 ]
@@ -22,6 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
@@ -32,11 +33,11 @@ dependencies = [
 
 [project.optional-dependencies]
 ortools = ["ortools>=9.14"]
-cpo = ["docplex>=2.25"]
+cpo = ["docplex>=2.25; python_version<'3.13'"]
 z3 = ["z3-solver>=4.8"]
 pumpkin = ["pumpkin-solver>=0.1"]
 minizinc = ["minizinc>=0.9"]
-all = ["ortools>=9.14", "docplex>=2.25", "z3-solver>=4.8", "pumpkin-solver>=0.1", "minizinc>=0.9"]
+all = ["ortools>=9.14", "docplex>=2.25; python_version<'3.13'", "z3-solver>=4.8", "pumpkin-solver>=0.1", "minizinc>=0.9"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
