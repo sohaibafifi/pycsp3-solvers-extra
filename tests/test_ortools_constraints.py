@@ -34,6 +34,21 @@ class TestBasicSatisfaction:
         assert status in (ortools_backend.cp_model.OPTIMAL, ortools_backend.cp_model.FEASIBLE)
         assert backend.solver.Value(x) == 1
 
+    def test_threads_parameter_sets_single_worker(self):
+        """threads=1 constrains OR-Tools to a single worker."""
+        backend = ortools_backend.ORToolsCallbacks(threads=1)
+        x = backend.model.NewIntVar(0, 1, "x")
+        backend.vars["x"] = x
+        backend.model.Add(x == 1)
+
+        status = backend.solve()
+
+        assert status in (SAT, OPTIMUM)
+        if hasattr(backend.solver.parameters, "num_workers"):
+            assert backend.solver.parameters.num_workers == 1
+        else:
+            assert backend.solver.parameters.num_search_workers == 1
+
     def test_simple_alldifferent(self):
         """Test simple AllDifferent constraint."""
         x = VarArray(size=4, dom=range(1, 5))

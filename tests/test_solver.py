@@ -280,6 +280,16 @@ class TestSolveParameters:
         call_args = mock_extra.call_args
         assert call_args[0][6] == hints  # hints is 7th positional arg
 
+    @patch('pycsp3_solvers_extra.solver._solve_extra')
+    def test_threads_passed(self, mock_extra):
+        """threads passed to backend."""
+        mock_extra.return_value = TypeStatus.SAT
+
+        solve(solver="ortools", threads=1)
+
+        call_args = mock_extra.call_args
+        assert call_args[0][9] == 1  # threads is 10th positional arg
+
 
 class TestMapSolutionToPycsp3:
     """Test _map_solution_to_pycsp3 function."""

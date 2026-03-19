@@ -54,6 +54,7 @@ class ORToolsCallbacks(BaseCallbacks):
         self,
         time_limit: float | None = None,
         sols: int | str | None = None,
+        threads: int | None = None,
         verbose: int = 0,
         options: str = "",
         hints: dict[str, int] | None = None,
@@ -74,6 +75,7 @@ class ORToolsCallbacks(BaseCallbacks):
         # Track bounds of solver expressions for tighter auxiliary variable domains
         # Maps id(expr) -> (lb, ub)
         self._expr_bounds: dict[int, tuple[int, int]] = {}
+        self.threads = threads
 
     # ========== Variable creation ==========
 
@@ -1684,6 +1686,8 @@ class ORToolsCallbacks(BaseCallbacks):
         # Configure solver
         if self.time_limit is not None:
             self.solver.parameters.max_time_in_seconds = self.time_limit
+        if self.threads is not None:
+            self.solver.parameters.num_workers = self.threads
 
         if self.verbose >= 2:
             self.solver.parameters.log_search_progress = True

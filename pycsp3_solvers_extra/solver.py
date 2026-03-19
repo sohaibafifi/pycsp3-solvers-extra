@@ -102,6 +102,7 @@ def solve(
     solver: str = "ortools",
     filename: str | None = None,
     time_limit: float | None = None,
+    threads: int | None = None,
     sols: int | str | None = None,
     verbose: int = 0,
     options: str = "",
@@ -120,6 +121,7 @@ def solve(
         solver: Solver name - "ortools", "cpo", "z3", "ace", or "choco"
         filename: Path to XCSP3 file. If None, compiles current model.
         time_limit: Time limit in seconds (None for no limit)
+        threads: Number of solver threads when supported by the backend.
         sols: Number of solutions to find. Use "all" or pycsp3.ALL for all solutions.
         verbose: Verbosity level (0=quiet, 1=normal, 2=detailed)
         options: Solver-specific options string
@@ -163,6 +165,7 @@ def solve(
             options,
             hints,
             output_dir,
+            threads,
             competition_output=competition_output,
         )
 
@@ -182,6 +185,7 @@ def solve(
         hints,
         output_dir,
         subsolver,
+        threads,
         competition_output=competition_output,
     )
 
@@ -195,6 +199,7 @@ def _solve_native(
     options: str,
     hints: dict[str, int] | None,
     output_dir: str | os.PathLike | None,
+    threads: int | None,
     *,
     competition_output: bool = False,
 ) -> TypeStatus:
@@ -391,6 +396,7 @@ def _solve_extra(
     hints: dict[str, int] | None,
     output_dir: str | os.PathLike | None,
     subsolver: str | None = None,
+    threads: int | None = None,
     *,
     competition_output: bool = False,
 ) -> TypeStatus:
@@ -445,6 +451,8 @@ def _solve_extra(
             "options": options,
             "hints": hints,
         }
+        if solver == "ortools" and threads is not None:
+            backend_kwargs["threads"] = threads
         # Pass subsolver for backends that support it (e.g., minizinc)
         if subsolver is not None:
             backend_kwargs["subsolver"] = subsolver
