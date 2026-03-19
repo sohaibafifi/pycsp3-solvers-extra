@@ -31,6 +31,17 @@ from pycsp3.classes.nodes import Node, TypeNode
 from pycsp3_solvers_extra.backends.base import BaseCallbacks
 from pycsp3.tools.utilities import ANY
 
+_BOUNDED_LINEAR_EXPR_TYPES = tuple(
+    cls
+    for cls in (
+        getattr(cmh, "BoundedLinearExpression", None),
+        getattr(cp_model, "BoundedLinearExpression", None),
+    )
+    if isinstance(cls, type)
+)
+
+_BOUNDED_LINEAR_EXPR_ATTRS = ("coeffs", "vars", "offset", "bounds")
+
 
 class ORToolsCallbacks(BaseCallbacks):
     """
@@ -154,6 +165,12 @@ class ORToolsCallbacks(BaseCallbacks):
         """Track bounds for a solver expression."""
         self._expr_bounds[id(expr)] = (lb, ub)
 
+    def _is_bounded_linear_expression(self, expr: Any) -> bool:
+        """Detect comparison expressions across OR-Tools versions."""
+        if _BOUNDED_LINEAR_EXPR_TYPES and isinstance(expr, _BOUNDED_LINEAR_EXPR_TYPES):
+            return True
+        return all(hasattr(expr, attr) for attr in _BOUNDED_LINEAR_EXPR_ATTRS)
+
     def _div_bounds(self, lb1: int, ub1: int, lb2: int, ub2: int) -> tuple[int, int]:
         max_num_abs = max(abs(lb1), abs(ub1))
         if lb2 <= 0 <= ub2:
@@ -256,7 +273,7 @@ class ORToolsCallbacks(BaseCallbacks):
         return bounds
 
     def _as_int_expr(self, expr: Any) -> Any:
-        if isinstance(expr, cmh.BoundedLinearExpression):
+        if self._is_bounded_linear_expression(expr):
             return self._as_bool_var(expr)
         return expr
 
@@ -391,9 +408,9 @@ class ORToolsCallbacks(BaseCallbacks):
 
     def _mul(self, a: Any, b: Any) -> Any:
         """Multiplication - handle variable * variable case."""
-        if isinstance(a, cmh.BoundedLinearExpression):
+        if self._is_bounded_linear_expression(a):
             a = self._as_bool_var(a)
-        if isinstance(b, cmh.BoundedLinearExpression):
+        if self._is_bounded_linear_expression(b):
             b = self._as_bool_var(b)
         if isinstance(a, int) and isinstance(b, int):
             return a * b
@@ -410,7 +427,7 @@ class ORToolsCallbacks(BaseCallbacks):
         """Return a BoolVar equivalent when expr is a comparison expression."""
         if hasattr(expr, "Not"):
             return expr
-        if isinstance(expr, cmh.BoundedLinearExpression):
+        if self._is_bounded_linear_expression(expr):
             result = self.model.NewBoolVar("")
             linear_expr = cp_model.LinearExpr.Sum([c * v for c, v in zip(expr.coeffs, expr.vars)])
             if expr.offset:
@@ -427,6 +444,36 @@ class ORToolsCallbacks(BaseCallbacks):
             self.model.AddLinearExpressionInDomain(linear_expr, complement).OnlyEnforceIf(result.Not())
             return result
         return expr
+
+    def _eq(self, a: Any, b: Any) -> Any:
+        a = self._as_int_expr(a)
+        b = self._as_int_expr(b)
+        return a == b
+
+    def _ne(self, a: Any, b: Any) -> Any:
+        a = self._as_int_expr(a)
+        b = self._as_int_expr(b)
+        return a != b
+
+    def _lt(self, a: Any, b: Any) -> Any:
+        a = self._as_int_expr(a)
+        b = self._as_int_expr(b)
+        return a < b
+
+    def _le(self, a: Any, b: Any) -> Any:
+        a = self._as_int_expr(a)
+        b = self._as_int_expr(b)
+        return a <= b
+
+    def _gt(self, a: Any, b: Any) -> Any:
+        a = self._as_int_expr(a)
+        b = self._as_int_expr(b)
+        return a > b
+
+    def _ge(self, a: Any, b: Any) -> Any:
+        a = self._as_int_expr(a)
+        b = self._as_int_expr(b)
+        return a >= b
 
     def _linear_sum(self, exprs: list[Any]) -> Any:
         """Build a linear sum from expressions, handling boolean expressions safely."""

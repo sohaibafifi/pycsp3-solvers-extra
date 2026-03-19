@@ -8,6 +8,7 @@ from pycsp3 import *
 from pycsp3.functions import Table
 from pycsp3_solvers_extra import solve
 from pycsp3_solvers_extra.backends import get_backend
+from pycsp3_solvers_extra.backends import ortools_backend
 
 ORTOOLS_AVAILABLE = get_backend("ortools") is not None
 
@@ -19,6 +20,19 @@ pytestmark = pytest.mark.skipif(
 
 class TestBasicSatisfaction:
     """Tests for basic satisfaction problems."""
+
+    def test_comparison_rhs_reified_expression(self):
+        """Comparisons accept a reified comparison expression on the RHS."""
+        backend = ortools_backend.ORToolsCallbacks()
+        x = backend.model.NewIntVar(0, 1, "x")
+        y = backend.model.NewIntVar(0, 4, "y")
+
+        backend.model.Add(backend._eq(x, y <= 1))
+        backend.model.Add(y == 0)
+
+        status = backend.solver.Solve(backend.model)
+        assert status in (ortools_backend.cp_model.OPTIMAL, ortools_backend.cp_model.FEASIBLE)
+        assert backend.solver.Value(x) == 1
 
     def test_simple_alldifferent(self):
         """Test simple AllDifferent constraint."""
