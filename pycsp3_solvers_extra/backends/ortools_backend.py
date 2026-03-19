@@ -1687,7 +1687,7 @@ class ORToolsCallbacks(BaseCallbacks):
         if self.time_limit is not None:
             self.solver.parameters.max_time_in_seconds = self.time_limit
         if self.threads is not None:
-            self.solver.parameters.num_workers = self.threads
+            self.solver.parameters.num_search_workers = self.threads
 
         if self.verbose >= 2:
             self.solver.parameters.log_search_progress = True
