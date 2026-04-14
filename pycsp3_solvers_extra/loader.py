@@ -64,6 +64,16 @@ def _is_list_of_lists(value) -> bool:
     return isinstance(value, list) and len(value) > 0 and all(isinstance(v, (list, tuple)) for v in value)
 
 
+def _format_range(value: range) -> str:
+    if value.step == 1:
+        return f"{value.start}..{value.stop - 1}"
+    return " ".join(str(v) for v in value)
+
+
+def _format_xcsp_item(value):
+    return _format_range(value) if isinstance(value, range) else value
+
+
 def _convert_argument(arg):
     value = arg.value
     lifted = False
@@ -79,14 +89,16 @@ def _convert_argument(arg):
             value = table_to_string(value)
         elif arg.type == TypeCtrArg.EXCEPT:
             if _is_list_of_lists(value):
-                value = "".join("(" + ",".join(str(v) for v in t) + ")" for t in value)
+                value = "".join("(" + ",".join(str(_format_xcsp_item(v)) for v in t) + ")" for t in value)
             else:
-                value = "(" + ",".join(str(v) for v in value) + ")"
+                value = "(" + ",".join(str(_format_xcsp_item(v)) for v in value) + ")"
         elif _is_list_of_lists(value):
             if arg.type == TypeCtrArg.LIST:
                 lifted = True
             elif arg.type != TypeCtrArg.MATRIX:
-                value = "".join("(" + ",".join(str(v) for v in t) + ")" for t in value)
+                value = "".join("(" + ",".join(str(_format_xcsp_item(v)) for v in t) + ")" for t in value)
+        else:
+            value = [_format_xcsp_item(v) for v in value]
 
     content_ordered = isinstance(value, list) and arg.type not in (TypeCtrArg.SET, TypeCtrArg.MSET)
     return value, content_compressible, lifted, content_ordered
@@ -244,6 +256,5 @@ def load(filepath, *, clear_model: bool = True) -> ParserXCSP3:
     # Parser import disables the OpOverrider; re-enable it for normal modeling.
     OpOverrider.enable()
     return parser
-
 
 

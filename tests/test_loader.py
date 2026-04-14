@@ -116,6 +116,16 @@ class TestNormalizeUnaryTable:
         assert result == [1, 2, 3, 4]
 
 
+class TestArgumentConversion:
+    """Test XCSP argument serialization helpers."""
+
+    def test_range_serialized_as_xcsp_interval(self):
+        """Python ranges are serialized as XCSP interval tokens."""
+        from pycsp3_solvers_extra.loader import _format_range
+
+        assert _format_range(range(2, 7)) == "2..6"
+
+
 class TestParseXcsp3File:
     """Test the _parse_xcsp3_file function."""
 
@@ -299,6 +309,34 @@ class TestLoadConstraints:
         load(xcsp_array_fixture)
         assert len(CtrEntities.items) > 0
 
+    def test_cardinality_range_occurs_roundtrip(self, tmp_path):
+        """Cardinality occurrence intervals round-trip without Python range reprs."""
+        from pycsp3 import compile as pycsp3_compile
+        from pycsp3_solvers_extra.loader import load
+
+        source = tmp_path / "cardinality_range.xml"
+        source.write_text('''<?xml version="1.0" encoding="UTF-8"?>
+<instance format="XCSP3" type="CSP">
+  <variables>
+    <array id="x" size="[4]"> 0..1 </array>
+  </variables>
+  <constraints>
+    <cardinality>
+      <list> x[] </list>
+      <values> 0 1 </values>
+      <occurs> 1..3 1..3 </occurs>
+    </cardinality>
+  </constraints>
+</instance>''')
+        target = tmp_path / "roundtrip.xml"
+
+        load(source)
+        pycsp3_compile(str(target), verbose=0)
+
+        text = target.read_text()
+        assert "range(" not in text
+        assert "<occurs> 1..3 1..3 </occurs>" in text
+
 
 class TestLoadObjectives:
     """Test objective loading."""
@@ -311,5 +349,4 @@ class TestLoadObjectives:
         load(xcsp_objective_fixture)
         # Should have at least one objective
         assert len(ObjEntities.items) > 0
-
 
