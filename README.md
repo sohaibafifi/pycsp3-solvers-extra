@@ -7,7 +7,6 @@ Extension library that adds extra solver backends to [pycsp3](https://github.com
 - **OR-Tools CP-SAT** - Google's constraint programming solver
 - **IBM DOcplex CP Optimizer** - IBM's CP solver (requires CPLEX Studio)
 - **Z3** - Microsoft's SMT solver with optimization support
-- **MiniZinc** - Interface to MiniZinc solvers (Gecode, Chuffed, CP-SAT, etc.) (WIP)
 - **Pumpkin** - Lazy clause generation CP solver written in Rust (WIP)
 
 ## Installation
@@ -28,9 +27,6 @@ pip install pycsp3-solvers-extra[z3]
 # Install with CPO (requires IBM CPLEX Studio installed separately)
 pip install pycsp3-solvers-extra[cpo]
 
-# Install with MiniZinc (requires MiniZinc CLI installed separately)
-pip install pycsp3-solvers-extra[minizinc]
-
 # Install with Pumpkin
 pip install pycsp3-solvers-extra[pumpkin]
 
@@ -44,7 +40,6 @@ pip install pycsp3-solvers-extra[all]
 - `ortools` - for OR-Tools backend
 - `z3-solver` - for Z3 backend
 - `docplex` - for CPO backend (requires IBM CPLEX Studio installed separately)
-- `minizinc` - for MiniZinc backend (requires [MiniZinc](https://www.minizinc.org/) installed separately)
 - `pumpkin-solver` - for Pumpkin backend
 
 ## Usage
@@ -66,13 +61,6 @@ status = solve(solver="z3")
 
 # Or solve with CPO
 status = solve(solver="cpo")
-
-# Or solve with MiniZinc (auto-detects available solver)
-status = solve(solver="minizinc")
-
-# Or specify a MiniZinc solver
-status = solve(solver="minizinc/gecode")
-status = solve(solver="minizinc/chuffed")
 
 # Or solve with Pumpkin
 status = solve(solver="pumpkin")
@@ -119,7 +107,7 @@ print(solution())
 
 ```python
 solve(
-    solver="ortools",  # "ortools", "z3", "cpo", "minizinc", "pumpkin", "ace", or "choco"
+    solver="ortools",  # "ortools", "z3", "cpo", "pumpkin", "ace", or "choco"
     time_limit=None,   # seconds
     sols=None,         # number of solutions to find
     verbose=0,         # verbosity level (0-2)

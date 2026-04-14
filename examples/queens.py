@@ -32,13 +32,14 @@ def main():
     parser = argparse.ArgumentParser(description="N-Queens Solver Comparison")
     parser.add_argument("-n", type=int, default=8, help="Board size (default: 8)")
     parser.add_argument("-v", "--verbose", type=int, default=0, help="Verbosity level")
-    parser.add_argument("--solvers", nargs="+", default=supported_solvers() + ['minizinc/gecode', 'minizinc/chuffed', 'minizinc/cp-sat',  'minizinc/coin-bc'],
-                        help="Solvers to compare")
+    parser.add_argument(
+        "--solvers", nargs="+", default=supported_solvers(), help="Solvers to compare"
+    )
     args = parser.parse_args()
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"N-Queens Problem (n={args.n})")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     results = {}
     for solver in args.solvers:
@@ -48,7 +49,7 @@ def main():
         satisfy(
             AllDifferent(q),
             AllDifferent([q[i] + i for i in range(args.n)]),
-            AllDifferent([q[i] - i for i in range(args.n)])
+            AllDifferent([q[i] - i for i in range(args.n)]),
         )
 
         start = time.time()
@@ -59,33 +60,43 @@ def main():
                 solution = values(q)
             else:
                 solution = None
-            results[solver] = {"status": str(status), "solution": solution, "time": elapsed}
+            results[solver] = {
+                "status": str(status),
+                "solution": solution,
+                "time": elapsed,
+            }
         except Exception as e:
             elapsed = time.time() - start
-            results[solver] = {"status": f"ERROR: {e}", "solution": None, "time": elapsed}
+            results[solver] = {
+                "status": f"ERROR: {e}",
+                "solution": None,
+                "time": elapsed,
+            }
 
         print(f"  Status: {results[solver]['status']}")
         print(f"  Time:   {results[solver]['time']:.4f}s")
-        if results[solver]['solution']:
+        if results[solver]["solution"]:
             print(f"  Solution: {results[solver]['solution']}")
         print()
         clear()
 
     # Print comparison table
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Comparison Summary")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"{'Solver':<12} {'Status':<12} {'Time (s)':<12}")
     print("-" * 36)
     for solver, result in results.items():
-        status = result['status'][:10] if len(result['status']) > 10 else result['status']
+        status = (
+            result["status"][:10] if len(result["status"]) > 10 else result["status"]
+        )
         print(f"{solver:<12} {status:<12} {result['time']:<12.4f}")
 
     # Show one solution board
     for solver, result in results.items():
-        if result['solution']:
+        if result["solution"]:
             print(f"\nSolution from {solver}:")
-            print_board(result['solution'])
+            print_board(result["solution"])
             break
 
 

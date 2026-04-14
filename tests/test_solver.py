@@ -45,7 +45,7 @@ class TestSupportedSolvers:
             assert native in solvers
 
     def test_includes_extra_solvers(self):
-        """Includes extra solvers (ortools, cpo, z3, pumpkin, minizinc)."""
+        """Includes extra solvers (ortools, cpo, z3, pumpkin)."""
         solvers = supported_solvers()
         for extra in EXTRA_SOLVERS:
             assert extra in solvers
@@ -111,49 +111,10 @@ class TestSolve:
         assert "Unknown solver" not in str(exc_info.value)
 
 
-class TestMinizincSubsolverParsing:
-    """Test minizinc/subsolver pattern parsing."""
-
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
-    def test_minizinc_without_subsolver(self, mock_solve_extra):
-        """minizinc without subsolver passes None."""
-        mock_solve_extra.return_value = TypeStatus.SAT
-
-        solve(solver="minizinc")
-
-        mock_solve_extra.assert_called_once()
-        call_args = mock_solve_extra.call_args
-        # subsolver should be None (9th positional arg)
-        assert call_args[0][8] is None
-
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
-    def test_minizinc_with_gecode(self, mock_solve_extra):
-        """minizinc/gecode extracts gecode as subsolver."""
-        mock_solve_extra.return_value = TypeStatus.SAT
-
-        solve(solver="minizinc/gecode")
-
-        mock_solve_extra.assert_called_once()
-        call_args = mock_solve_extra.call_args
-        # subsolver should be "gecode"
-        assert call_args[0][8] == "gecode"
-
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
-    def test_minizinc_with_chuffed(self, mock_solve_extra):
-        """minizinc/chuffed extracts chuffed as subsolver."""
-        mock_solve_extra.return_value = TypeStatus.SAT
-
-        solve(solver="minizinc/chuffed")
-
-        mock_solve_extra.assert_called_once()
-        call_args = mock_solve_extra.call_args
-        assert call_args[0][8] == "chuffed"
-
-
 class TestSolveNativeRouting:
     """Test routing to native solvers."""
 
-    @patch('pycsp3_solvers_extra.solver._solve_native')
+    @patch("pycsp3_solvers_extra.solver._solve_native")
     def test_ace_routes_to_native(self, mock_native):
         """ace solver routes to _solve_native."""
         mock_native.return_value = TypeStatus.SAT
@@ -162,7 +123,7 @@ class TestSolveNativeRouting:
 
         mock_native.assert_called_once()
 
-    @patch('pycsp3_solvers_extra.solver._solve_native')
+    @patch("pycsp3_solvers_extra.solver._solve_native")
     def test_choco_routes_to_native(self, mock_native):
         """choco solver routes to _solve_native."""
         mock_native.return_value = TypeStatus.SAT
@@ -175,7 +136,7 @@ class TestSolveNativeRouting:
 class TestSolveExtraRouting:
     """Test routing to extra solvers."""
 
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
+    @patch("pycsp3_solvers_extra.solver._solve_extra")
     def test_ortools_routes_to_extra(self, mock_extra):
         """ortools solver routes to _solve_extra."""
         mock_extra.return_value = TypeStatus.SAT
@@ -184,7 +145,7 @@ class TestSolveExtraRouting:
 
         mock_extra.assert_called_once()
 
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
+    @patch("pycsp3_solvers_extra.solver._solve_extra")
     def test_z3_routes_to_extra(self, mock_extra):
         """z3 solver routes to _solve_extra."""
         mock_extra.return_value = TypeStatus.SAT
@@ -193,7 +154,7 @@ class TestSolveExtraRouting:
 
         mock_extra.assert_called_once()
 
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
+    @patch("pycsp3_solvers_extra.solver._solve_extra")
     def test_pumpkin_routes_to_extra(self, mock_extra):
         """pumpkin solver routes to _solve_extra."""
         mock_extra.return_value = TypeStatus.SAT
@@ -206,7 +167,7 @@ class TestSolveExtraRouting:
 class TestSolveExtraBackendUnavailable:
     """Test _solve_extra when backend is unavailable."""
 
-    @patch('pycsp3_solvers_extra.solver.get_backend')
+    @patch("pycsp3_solvers_extra.solver.get_backend")
     def test_backend_not_available_raises_importerror(self, mock_get_backend):
         """Missing backend raises ImportError."""
         mock_get_backend.return_value = None
@@ -214,7 +175,7 @@ class TestSolveExtraBackendUnavailable:
         with pytest.raises(ImportError, match="not available"):
             solve(solver="ortools")
 
-    @patch('pycsp3_solvers_extra.solver.get_backend')
+    @patch("pycsp3_solvers_extra.solver.get_backend")
     def test_error_message_includes_install_hint(self, mock_get_backend):
         """Error message includes installation hint."""
         mock_get_backend.return_value = None
@@ -229,7 +190,7 @@ class TestSolveExtraBackendUnavailable:
 class TestSolveParameters:
     """Test parameter passing."""
 
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
+    @patch("pycsp3_solvers_extra.solver._solve_extra")
     def test_time_limit_passed(self, mock_extra):
         """time_limit passed to backend."""
         mock_extra.return_value = TypeStatus.SAT
@@ -239,7 +200,7 @@ class TestSolveParameters:
         call_args = mock_extra.call_args
         assert call_args[0][2] == 60  # time_limit is 3rd positional arg
 
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
+    @patch("pycsp3_solvers_extra.solver._solve_extra")
     def test_sols_passed(self, mock_extra):
         """sols passed to backend."""
         mock_extra.return_value = TypeStatus.SAT
@@ -249,7 +210,7 @@ class TestSolveParameters:
         call_args = mock_extra.call_args
         assert call_args[0][3] == 5  # sols is 4th positional arg
 
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
+    @patch("pycsp3_solvers_extra.solver._solve_extra")
     def test_verbose_passed(self, mock_extra):
         """verbose passed to backend."""
         mock_extra.return_value = TypeStatus.SAT
@@ -259,7 +220,7 @@ class TestSolveParameters:
         call_args = mock_extra.call_args
         assert call_args[0][4] == 2  # verbose is 5th positional arg
 
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
+    @patch("pycsp3_solvers_extra.solver._solve_extra")
     def test_options_passed(self, mock_extra):
         """options passed to backend."""
         mock_extra.return_value = TypeStatus.SAT
@@ -269,7 +230,7 @@ class TestSolveParameters:
         call_args = mock_extra.call_args
         assert call_args[0][5] == "--opt=val"  # options is 6th positional arg
 
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
+    @patch("pycsp3_solvers_extra.solver._solve_extra")
     def test_hints_passed(self, mock_extra):
         """hints passed to backend."""
         mock_extra.return_value = TypeStatus.SAT
@@ -280,7 +241,7 @@ class TestSolveParameters:
         call_args = mock_extra.call_args
         assert call_args[0][6] == hints  # hints is 7th positional arg
 
-    @patch('pycsp3_solvers_extra.solver._solve_extra')
+    @patch("pycsp3_solvers_extra.solver._solve_extra")
     def test_threads_passed(self, mock_extra):
         """threads passed to backend."""
         mock_extra.return_value = TypeStatus.SAT
@@ -321,7 +282,7 @@ class TestUpdatePycsp3SolverState:
 
         _update_pycsp3_solver_state(callbacks, TypeStatus.OPTIMUM)
 
-        assert hasattr(pycsp3, '_solver')
+        assert hasattr(pycsp3, "_solver")
         assert pycsp3._solver.status == TypeStatus.OPTIMUM
         assert pycsp3._solver.bound == 42
 

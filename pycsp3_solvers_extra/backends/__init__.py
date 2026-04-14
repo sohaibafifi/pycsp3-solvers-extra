@@ -41,6 +41,7 @@ def _try_load_backend(name: str) -> None:
     if name == "ortools":
         try:
             from pycsp3_solvers_extra.backends.ortools_backend import ORToolsCallbacks
+
             _BACKENDS["ortools"] = ORToolsCallbacks
         except ImportError:
             _BACKENDS["ortools"] = None
@@ -48,6 +49,7 @@ def _try_load_backend(name: str) -> None:
     elif name == "cpo":
         try:
             from pycsp3_solvers_extra.backends.cpo_backend import CPOCallbacks
+
             _BACKENDS["cpo"] = CPOCallbacks
         except ImportError:
             _BACKENDS["cpo"] = None
@@ -55,29 +57,27 @@ def _try_load_backend(name: str) -> None:
     elif name == "z3":
         try:
             from pycsp3_solvers_extra.backends.z3_backend import Z3Callbacks
+
             _BACKENDS["z3"] = Z3Callbacks
         except ImportError:
             _BACKENDS["z3"] = None
 
     elif name == "pumpkin":
         try:
-            from pycsp3_solvers_extra.backends.pumpkin_backend import PumpkinCallbacks, PUMPKIN_AVAILABLE
+            from pycsp3_solvers_extra.backends.pumpkin_backend import (
+                PumpkinCallbacks,
+                PUMPKIN_AVAILABLE,
+            )
+
             _BACKENDS["pumpkin"] = PumpkinCallbacks if PUMPKIN_AVAILABLE else None
         except ImportError:
             _BACKENDS["pumpkin"] = None
-
-    elif name == "minizinc":
-        try:
-            from pycsp3_solvers_extra.backends.minizinc_backend import MiniZincCallbacks, MINIZINC_AVAILABLE
-            _BACKENDS["minizinc"] = MiniZincCallbacks if MINIZINC_AVAILABLE else None
-        except ImportError:
-            _BACKENDS["minizinc"] = None
 
 
 def available_backends() -> list[str]:
     """Return list of available backend names."""
     # Try loading all known backends
-    for name in ["ortools", "cpo", "z3", "pumpkin", "minizinc"]:
+    for name in ["ortools", "cpo", "z3", "pumpkin"]:
         if name not in _BACKENDS:
             _try_load_backend(name)
 

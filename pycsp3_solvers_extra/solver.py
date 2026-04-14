@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 NATIVE_SOLVERS = {"ace", "choco"}
 
 # Solvers implemented by this package
-EXTRA_SOLVERS = {"ortools", "cpo", "z3", "pumpkin", "minizinc"}
+EXTRA_SOLVERS = {"ortools", "cpo", "z3", "pumpkin"}
 
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -147,13 +147,6 @@ def solve(
     """
     solver_lower = solver.lower()
 
-    # Handle minizinc/subsolver pattern (e.g., "minizinc/gecode", "minizinc/chuffed")
-    subsolver: str | None = None
-    if solver_lower.startswith("minizinc"):
-        parts = solver_lower.split("/", 1)
-        solver_lower = parts[0]  # "minizinc"
-        subsolver = parts[1] if len(parts) > 1 else None  # auto-detect if not specified
-
     # Delegate native solvers to pycsp3
     if solver_lower in NATIVE_SOLVERS:
         return _solve_native(
@@ -184,7 +177,6 @@ def solve(
         options,
         hints,
         output_dir,
-        subsolver,
         threads,
         competition_output=competition_output,
     )
@@ -347,7 +339,10 @@ def _solve_native(
             return status
 
         # Emit final objective value if needed.
-        if progress_printer is not None and status in (TypeStatus.SAT, TypeStatus.OPTIMUM):
+        if progress_printer is not None and status in (
+            TypeStatus.SAT,
+            TypeStatus.OPTIMUM,
+        ):
             if getattr(solver_obj, "bound", None) is not None:
                 progress_printer.report(solver_obj.bound)
 
@@ -361,7 +356,9 @@ def _solve_native(
                 if value is ANY:
                     solution_dict[var.id] = "*"
                 else:
-                    solution_dict[var.id] = int(value) if isinstance(value, bool | int) else value
+                    solution_dict[var.id] = (
+                        int(value) if isinstance(value, bool | int) else value
+                    )
 
         class _NativeCallbacks:
             def __init__(self, solution, bound, printer):
@@ -378,7 +375,9 @@ def _solve_native(
             def get_competition_progress_printer(self):
                 return self._printer
 
-        native_callbacks = _NativeCallbacks(solution_dict, getattr(solver_obj, "bound", None), progress_printer)
+        native_callbacks = _NativeCallbacks(
+            solution_dict, getattr(solver_obj, "bound", None), progress_printer
+        )
         emit_competition_output(parser, native_callbacks, status)
         return status
     finally:
@@ -395,7 +394,6 @@ def _solve_extra(
     options: str,
     hints: dict[str, int] | None,
     output_dir: str | os.PathLike | None,
-    subsolver: str | None = None,
     threads: int | None = None,
     *,
     competition_output: bool = False,
@@ -453,12 +451,10 @@ def _solve_extra(
         }
         if solver == "ortools" and threads is not None:
             backend_kwargs["threads"] = threads
-        # Pass subsolver for backends that support it (e.g., minizinc)
-        if subsolver is not None:
-            backend_kwargs["subsolver"] = subsolver
         callbacks = backend_class(**backend_kwargs)
 
         from pycsp3_solvers_extra.transforms import TransformingCallbacks
+
         callbacks = TransformingCallbacks(callbacks, backend_name=solver)
 
         # Parse XCSP3 and build solver model
@@ -475,7 +471,9 @@ def _solve_extra(
 
             progress_printer = make_objective_progress_printer(parser)
             if progress_printer is not None:
-                set_progress_printer = getattr(callbacks, "set_competition_progress_printer", None)
+                set_progress_printer = getattr(
+                    callbacks, "set_competition_progress_printer", None
+                )
                 if callable(set_progress_printer):
                     set_progress_printer(progress_printer)
 
@@ -499,11 +497,15 @@ def _solve_extra(
         _update_pycsp3_solver_state(callbacks, status)
 
         if competition_output:
-            if progress_printer is not None and status in (TypeStatus.SAT, TypeStatus.OPTIMUM):
+            if progress_printer is not None and status in (
+                TypeStatus.SAT,
+                TypeStatus.OPTIMUM,
+            ):
                 final_objective = callbacks.get_objective_value()
                 if final_objective is not None:
                     progress_printer.report(final_objective)
             from pycsp3_solvers_extra.competition import emit_competition_output
+
             emit_competition_output(parser, callbacks, status)
 
         return status
@@ -529,6 +531,7 @@ def _solve_extra(
         # Re-enable OpOverrider since xparser.py disables it on import
         # This is needed so that Variable.__add__ etc. work for subsequent models
         from pycsp3.tools.curser import OpOverrider
+
         OpOverrider.enable()
 
         # Clean up temporary file
@@ -572,7 +575,7 @@ def _map_solution_to_pycsp3(callbacks) -> None:
     def set_var_value(var, value):
         """Set both value and values for a variable."""
         var.value = value
-        if not hasattr(var, 'values') or var.values is None:
+        if not hasattr(var, "values") or var.values is None:
             var.values = []
         var.values = [value]
 
@@ -592,7 +595,11 @@ def _update_pycsp3_solver_state(callbacks, status: TypeStatus) -> None:
     """Expose extra-solver results through pycsp3 status/bound helpers."""
     import pycsp3
 
-    solution = callbacks.get_solution() if status in (TypeStatus.SAT, TypeStatus.OPTIMUM) else None
+    solution = (
+        callbacks.get_solution()
+        if status in (TypeStatus.SAT, TypeStatus.OPTIMUM)
+        else None
+    )
     n_solutions = 0
     if status in (TypeStatus.SAT, TypeStatus.OPTIMUM):
         n_solutions = 1
@@ -602,7 +609,11 @@ def _update_pycsp3_solver_state(callbacks, status: TypeStatus) -> None:
             if all_solutions:
                 n_solutions = len(all_solutions)
 
-    bound = callbacks.get_objective_value() if status in (TypeStatus.SAT, TypeStatus.OPTIMUM) else None
+    bound = (
+        callbacks.get_objective_value()
+        if status in (TypeStatus.SAT, TypeStatus.OPTIMUM)
+        else None
+    )
 
     pycsp3._solver = SimpleNamespace(
         status=status,
