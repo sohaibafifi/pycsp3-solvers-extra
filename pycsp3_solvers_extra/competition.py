@@ -92,7 +92,7 @@ class ObjectiveProgressPrinter:
             if raw_value == self.best_value_raw:
                 return False
             self.best_value_raw = raw_value
-            print(f"o {raw_value}", file=self.stream, flush=True)
+            print(f"o {int(raw_value)}", file=self.stream, flush=True)
             self.printed_any = True
             return True
 
@@ -101,7 +101,7 @@ class ObjectiveProgressPrinter:
 
         self.best_value = value
         self.best_value_raw = raw_value
-        print(f"o {raw_value}", file=self.stream, flush=True)
+        print(f"o {int(raw_value)}", file=self.stream, flush=True)
         self.printed_any = True
         return True
 
