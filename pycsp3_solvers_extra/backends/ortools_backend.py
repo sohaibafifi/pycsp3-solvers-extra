@@ -77,6 +77,12 @@ class ORToolsCallbacks(BaseCallbacks):
         self._expr_bounds: dict[int, tuple[int, int]] = {}
         self.threads = threads
 
+        # The objective expression handed to Minimize/Maximize. We report the
+        # objective by evaluating this on the extracted assignment rather than
+        # trusting solver.ObjectiveValue(), which CP-SAT can return inconsistent
+        # with the solution vector (the emitted 'v' values).
+        self._obj_expr: Any = None
+
     # ========== Variable creation ==========
 
     def var_integer_range(self, x: Variable, min_value: int, max_value: int):
@@ -1585,6 +1591,7 @@ class ORToolsCallbacks(BaseCallbacks):
         else:
             expr = self.translate_node(term)
             expr = self._as_bool_var(expr)
+        self._obj_expr = expr
         self.model.Minimize(expr)
         self._log(1, "Set minimization objective")
 
@@ -1596,6 +1603,7 @@ class ORToolsCallbacks(BaseCallbacks):
         else:
             expr = self.translate_node(term)
             expr = self._as_bool_var(expr)
+        self._obj_expr = expr
         self.model.Maximize(expr)
         self._log(1, "Set maximization objective")
 
@@ -1631,6 +1639,7 @@ class ORToolsCallbacks(BaseCallbacks):
         else:
             raise NotImplementedError(f"Objective type {obj_type} not implemented")
 
+        self._obj_expr = obj_expr
         self.model.Minimize(obj_expr)
         self._log(1, f"Set {obj_type} minimization objective")
 
@@ -1663,6 +1672,7 @@ class ORToolsCallbacks(BaseCallbacks):
         else:
             raise NotImplementedError(f"Objective type {obj_type} not implemented")
 
+        self._obj_expr = obj_expr
         self.model.Maximize(obj_expr)
         self._log(1, f"Set {obj_type} maximization objective")
 
@@ -1712,8 +1722,17 @@ class ORToolsCallbacks(BaseCallbacks):
                     self._outer = outer
 
                 def on_solution_callback(self):
+                    # Evaluate the objective on the current solution rather than
+                    # using ObjectiveValue() so streamed 'o' lines stay consistent
+                    # with the assignment (see _set_objective_value).
                     try:
-                        obj_value = self.ObjectiveValue()
+                        obj_expr = self._outer._obj_expr
+                        if obj_expr is None:
+                            obj_value = self.ObjectiveValue()
+                        elif isinstance(obj_expr, int):
+                            obj_value = obj_expr
+                        else:
+                            obj_value = self.Value(obj_expr)
                     except Exception:
                         return
                     self._outer._report_objective_progress(obj_value)
@@ -1791,11 +1810,21 @@ class ORToolsCallbacks(BaseCallbacks):
             self._solution[var_id] = self.solver.Value(var)
 
     def _set_objective_value(self):
-        """Capture objective value from the solver when present."""
+        """Capture objective value from the solver when present.
+
+        Evaluate the objective expression on the extracted assignment instead of
+        using solver.ObjectiveValue(): CP-SAT can return an ObjectiveValue() that
+        is inconsistent with the solution vector (solver.Value()), which makes the
+        reported 'o' cost disagree with the emitted 'v' values and fails the XCSP
+        solution checker. solver.Value(self._obj_expr) is consistent by construction.
+        """
         if not self.model.HasObjective():
             self._objective_value = None
             return
-        obj = self.solver.ObjectiveValue()
+        if self._obj_expr is not None:
+            obj = self._obj_expr if isinstance(self._obj_expr, int) else self.solver.Value(self._obj_expr)
+        else:
+            obj = self.solver.ObjectiveValue()
         if isinstance(obj, float) and obj.is_integer():
             obj = int(obj)
         self._objective_value = obj

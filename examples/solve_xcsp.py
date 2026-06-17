@@ -9,12 +9,13 @@ def main() -> None:
     parser.add_argument("filepath", help="Path to .xml or .xml.lzma XCSP3 file")
     parser.add_argument("--solver", default="ortools", help="Solver backend (default: ortools)")
     parser.add_argument("--verbose", type=int, default=0, help="Verbosity level")
-    parser.add_argument("--time-limit", type=float, default=None, help="Time limit in seconds")
+    parser.add_argument("--time-limit", type=float, default=1800, help="Time limit in seconds")
     parser.add_argument("--threads", type=int, default=1, help="Number of solver threads (OR-Tools only)")
     parser.add_argument("--options", default="", help="Solver-specific options (e.g. '--options=\"-positive=CT2\"')")
     parser.add_argument(
         "--competition-output",
         action="store_true",
+        default=True,
         help="Emit XCSP competition output lines (o/s/v)",
     )
     args = parser.parse_args()
